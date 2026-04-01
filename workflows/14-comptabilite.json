@@ -1,0 +1,489 @@
+{
+  "id": "XNU3aOoyXCUAa2Uv",
+  "name": "14-comptabilite",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "comptabilite",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "5f926ec3-876e-4602-819c-017ccc2062ff",
+      "name": "Webhook Comptabilite",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1568,
+        272
+      ],
+      "webhookId": "comptabilite"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst token = query.token || '';\n\nreturn [{\n  json: { token }\n}];"
+      },
+      "id": "821cf342-c60b-4e3b-85e7-64bab76d89df",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1344,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-token",
+              "leftValue": "={{ $json.token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0bba6623-36e9-4962-a214-2d41bfef5388",
+      "name": "Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM utilisateurs WHERE token_session = '{{ $('Parse Parameters').first().json.token }}' AND actif = true AND token_expiration > NOW()",
+        "options": {}
+      },
+      "id": "1cd63008-1b6b-4f29-b1b9-c41c94033017",
+      "name": "Search User By Token",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -896,
+        160
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "user-found",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8c520af3-c12f-400a-a937-b9e0581cc782",
+      "name": "Token Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const user = $input.first().json;\nconst fields = user.fields || user;\nconst token = $('Parse Parameters').first().json.token;\n\nreturn [{\n  json: {\n    user_id: user.id,\n    nom_complet: fields.nom_complet || fields.nom_utilisateur || 'Utilisateur',\n    role: fields.role || '',\n    token: token\n  }\n}];"
+      },
+      "id": "9508b3f9-658c-42bb-b2da-f228b60c4554",
+      "name": "Store User Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-responsable",
+              "leftValue": "={{ $json.role }}",
+              "rightValue": "responsable",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "is-patron",
+              "leftValue": "={{ $json.role }}",
+              "rightValue": "patron",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "is-webmaster",
+              "leftValue": "={{ $json.role }}",
+              "rightValue": "webmaster",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "7cee4547-ae98-4a05-a1dd-b4443e964ded",
+      "name": "Check Role",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Acc\\u00e8s refus\\u00e9</title><style>body{font-family:'Segoe UI',sans-serif;background:#f0f2f5;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.box{background:#fef2f2;border:1px solid #fecaca;padding:40px;border-radius:14px;text-align:center;max-width:400px}h1{color:#dc2626;margin:0 0 15px}p{color:#6b7280;margin:0}</style></head><body><div class=\"box\"><h1>Acc\\u00e8s refus\\u00e9</h1><p>Cette page est r\\u00e9serv\\u00e9e aux responsables.</p></div></body></html>",
+        "options": {
+          "responseCode": 403,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a4ca219a-9074-4c15-8362-730f4caa33a4",
+      "name": "Respond Access Denied",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT f.*, c.nom as client_nom, c.ville as client_ville FROM factures f LEFT JOIN clients c ON c.id = f.client_id ORDER BY f.date_facture DESC",
+        "options": {}
+      },
+      "id": "5640ca0d-67fa-47c7-a5d1-15f3e97b1b46",
+      "name": "Fetch Factures",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        160
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM clients ORDER BY nom",
+        "options": {}
+      },
+      "id": "892afc38-ab0e-4164-830d-60ae35b00d6f",
+      "name": "Fetch Clients",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        160
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function buildNav(userName, userRole, token, baseUrl, currentPage) {\n  const ADMIN = ['commercial','responsable','patron','webmaster'];\n  const isAdmin = ADMIN.includes(userRole);\n  const roleNames = { decoupe_toile:'D\\u00e9coupe toile', couture:'Couture', decoupe_armature:'D\\u00e9coupe armature', assemblage:'Assemblage', reglage:'R\\u00e9glage', emballage:'Emballage', expedition:'Exp\\u00e9dition', commercial:'Commercial', responsable:'Responsable', patron:'Patron', webmaster:'Webmaster' };\n  const roleDisplay = roleNames[userRole] || userRole;\n  const u = (p) => `https://${baseUrl}/webhook/${p}?token=${token}`;\n  const a = (page) => currentPage === page ? ' active' : '';\n  const links = [];\n  links.push({ label:'Accueil', page:'home', href:u('home') });\n  links.push({ label:'Production', page:'production', href:u('production') });\n  if (isAdmin) links.push({ label:'Validation', page:'validation', href:u('validation') });\n  if (isAdmin || userRole==='expedition') links.push({ label:'Dashboard', page:'dashboard', href:u('dashboard') });\n  if (['expedition','responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Exp\\u00e9dition', page:'expedition', href:u('expedition') });\n  if (isAdmin) links.push({ label:'Import', page:'upload', href:u('upload') });\n  if (['responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Compta', page:'comptabilite', href:u('comptabilite') });\n  if (userRole==='webmaster') links.push({ label:'Utilisateurs', page:'users', href:u('users') });\n  const linksHtml = links.map(l => `<a href=\"${l.href}\" class=\"nav-link${a(l.page)}\">${l.label}</a>`).join('');\n  return `<nav class=\"main-nav\">\n    <a class=\"nav-brand\" href=\"${u('home')}\">MON USINE</a>\n    <div class=\"nav-links\">${linksHtml}</div>\n    <div class=\"nav-user\">\n      <span class=\"nav-uname\">${userName}</span>\n      <span class=\"nav-urole\">${roleDisplay}</span>\n      <a class=\"nav-logout\" href=\"https://${baseUrl}/webhook/login\">D\\u00e9connexion</a>\n    </div>\n  </nav>`;\n}\n\nconst userInfo = $('Store User Info').first().json;\nconst userRole = userInfo.role;\nconst userName = userInfo.nom_complet;\nconst token = userInfo.token;\nconst baseUrl = $('Webhook Comptabilite').first().json.headers?.host || 'localhost';\n\nconst clientItems = $('Fetch Clients').all().filter(i => i.json && i.json.id);\nconst clientMap = {};\nclientItems.forEach(i => { const f = i.json.fields || i.json; clientMap[i.json.id] = f.Nom || 'N/A'; });\n\nconst fmtDate = (d) => { if (!d || d === '-') return '-'; const dt = new Date(d); return isNaN(dt) ? d : dt.toLocaleDateString('fr-FR'); };\n\nconst factureItems = $('Fetch Factures').all().filter(i => i.json && i.json.id);\nlet factures = factureItems.map(i => {\n  const f = i.json.fields || i.json;\n  const clientId = (f.Clients && f.Clients[0]) || '';\n  const totalTTC = parseFloat(f.Total_TTC) || 0;\n  const rawAcompte = parseFloat(f.Acompte) || 0;\n  const discount = parseFloat(f.discount_total) || 0;\n  const magasin = f.Magasin || '-';\n  const isMagento = magasin.toLowerCase().includes('magento');\n  const acompte = isMagento ? totalTTC : rawAcompte;\n  const paiement = isMagento ? 'Pay\\u00e9' : (f.Paiement || '-');\n  const reste = totalTTC - acompte;\n  let statut = 'impaye';\n  if (reste <= 0 || paiement.toLowerCase().includes('pay\\u00e9') || paiement.toLowerCase().includes('paye')) statut = 'paye';\n  else if (acompte > 0 || paiement.toLowerCase().includes('partiel')) statut = 'partiel';\n  return {\n    numero: f['Num\\u00e9ro'] || f['Num\\u00e9ro facture'] || 'N/A',\n    date: fmtDate(f.Date), rawDate: f.Date || '',\n    magasin: magasin, client_nom: clientMap[clientId] || 'N/A',\n    total_ttc: totalTTC, acompte: acompte, discount: discount,\n    reste: reste, paiement: paiement, statut: statut\n  };\n});\n\nfactures.sort((a, b) => { if (!a.rawDate) return 1; if (!b.rawDate) return -1; return new Date(b.rawDate) - new Date(a.rawDate); });\n\nconst totalFactures = factures.length;\nconst totalCA = factures.reduce((s, f) => s + f.total_ttc, 0);\nconst totalAcomptes = factures.reduce((s, f) => s + f.acompte, 0);\nconst totalReste = totalCA - totalAcomptes;\nconst totalDiscount = factures.reduce((s, f) => s + f.discount, 0);\nconst nbPaye = factures.filter(f => f.statut === 'paye').length;\nconst nbPartiel = factures.filter(f => f.statut === 'partiel').length;\nconst nbImpaye = factures.filter(f => f.statut === 'impaye').length;\nconst pctEncaisse = totalCA > 0 ? Math.round((totalAcomptes / totalCA) * 100) : 0;\n\nconst fmt = (n) => n.toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2});\n\nconst magasins = [...new Set(factures.map(f => f.magasin))].sort();\n\nlet tabsHtml = '<button class=\"tab-btn active\" onclick=\"filterStatut(\\'all\\')\">Toutes <span class=\"tc\">' + totalFactures + '</span></button>';\nif (nbPaye > 0) tabsHtml += '<button class=\"tab-btn\" onclick=\"filterStatut(\\'paye\\')\" style=\"--tc:#059669\">Pay\\u00e9es <span class=\"tc\">' + nbPaye + '</span></button>';\nif (nbPartiel > 0) tabsHtml += '<button class=\"tab-btn\" onclick=\"filterStatut(\\'partiel\\')\" style=\"--tc:#d97706\">Partielles <span class=\"tc\">' + nbPartiel + '</span></button>';\nif (nbImpaye > 0) tabsHtml += '<button class=\"tab-btn\" onclick=\"filterStatut(\\'impaye\\')\" style=\"--tc:#dc2626\">Impay\\u00e9es <span class=\"tc\">' + nbImpaye + '</span></button>';\n\nlet magasinOpts = '<option value=\"all\">Tous magasins</option>';\nmagasins.forEach(m => { magasinOpts += '<option value=\"' + m + '\">' + m + '</option>'; });\n\nconst pColor = (s) => s === 'paye' ? '#059669' : (s === 'partiel' ? '#d97706' : '#dc2626');\nconst pLabel = (p) => p;\n\nlet rowsHtml = '';\nif (totalFactures === 0) {\n  rowsHtml = '<tr><td colspan=\"8\" class=\"empty-row\">Aucune facture</td></tr>';\n} else {\n  factures.forEach(f => {\n    const pc = pColor(f.statut);\n    const searchData = [f.numero, f.client_nom, f.magasin, f.paiement].join(' ').toLowerCase();\n    rowsHtml += '<tr class=\"frow\" data-statut=\"' + f.statut + '\" data-magasin=\"' + f.magasin + '\" data-search=\"' + searchData.replace(/\"/g, '') + '\">';\n    rowsHtml += '<td class=\"col-num\">' + f.numero + '</td>';\n    rowsHtml += '<td class=\"col-date\">' + f.date + '</td>';\n    rowsHtml += '<td class=\"col-client\">' + f.client_nom + '</td>';\n    rowsHtml += '<td class=\"col-mag\"><span class=\"mag-badge\">' + f.magasin + '</span></td>';\n    rowsHtml += '<td class=\"col-montant al-r\">' + fmt(f.total_ttc) + ' \\u20ac</td>';\n    rowsHtml += '<td class=\"col-montant al-r\">' + fmt(f.acompte) + ' \\u20ac</td>';\n    const resteColor = f.reste > 0 ? '#dc2626' : '#059669';\n    rowsHtml += '<td class=\"col-montant al-r\" style=\"color:' + resteColor + ';font-weight:700\">' + fmt(f.reste) + ' \\u20ac</td>';\n    rowsHtml += '<td class=\"col-statut\"><span class=\"pay-badge\" style=\"background:' + pc + '18;color:' + pc + ';border-color:' + pc + '40\">' + f.paiement + '</span></td>';\n    rowsHtml += '</tr>';\n  });\n}\n\nconst html = `<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no\">\n  <title>Comptabilit\\u00e9 - MON USINE</title>\n  <style>\n.main-nav{position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:12px;background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 18px;box-shadow:0 1px 3px rgba(0,0,0,0.06);font-size:0.85rem;flex-wrap:wrap}\n.nav-brand{color:#2563eb;font-weight:800;font-size:1rem;text-decoration:none;white-space:nowrap}\n.nav-links{display:flex;gap:4px;flex:1;overflow-x:auto;scrollbar-width:none}\n.nav-links::-webkit-scrollbar{display:none}\n.nav-link{color:#6b7280;text-decoration:none;padding:6px 10px;border-radius:8px;white-space:nowrap;transition:all 0.2s}\n.nav-link:hover{background:#eff6ff;color:#2563eb}\n.nav-link.active{background:#eff6ff;color:#2563eb;font-weight:600}\n.nav-user{display:flex;align-items:center;gap:8px;margin-left:auto;white-space:nowrap}\n.nav-uname{color:#2563eb;font-weight:600}\n.nav-urole{color:#6b7280;font-size:0.75rem}\n.nav-logout{color:#dc2626;text-decoration:none;font-size:0.8rem;padding:4px 8px;border:1px solid #fecaca;border-radius:6px}\n.nav-logout:hover{background:#fef2f2}\n\n*{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:'Segoe UI',-apple-system,sans-serif;background:#f0f2f5;height:100vh;display:flex;flex-direction:column;color:#111827;overflow:hidden}\n\n.topbar{display:flex;align-items:center;gap:14px;padding:10px 20px;background:#fff;border-bottom:1px solid #e5e7eb;flex-shrink:0;flex-wrap:wrap}\n.topbar h1{font-size:1.1rem;font-weight:700;white-space:nowrap;color:#111827}\n.topbar h1 .hl{color:#2563eb}\n.kpi-row{display:flex;gap:6px;flex:1;overflow-x:auto;scrollbar-width:none;align-items:center}\n.kpi-row::-webkit-scrollbar{display:none}\n.kp{display:flex;align-items:center;gap:6px;padding:5px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:20px;font-size:0.78rem;white-space:nowrap}\n.kp .kv{font-weight:800;font-size:0.88rem}\n.kp.accent{background:#eff6ff;border-color:#bfdbfe}\n.kp .bar{width:50px;height:5px;background:#e5e7eb;border-radius:3px;overflow:hidden}\n.kp .bar-fill{height:100%;border-radius:3px}\n\n.toolbar{display:flex;align-items:center;gap:8px;padding:8px 20px;background:#fff;border-bottom:1px solid #e5e7eb;flex-shrink:0;overflow-x:auto}\n.tab-btn{padding:5px 12px;border:1px solid #e5e7eb;background:#fff;border-radius:20px;font-size:0.76rem;cursor:pointer;white-space:nowrap;transition:all 0.15s;color:#374151}\n.tab-btn:hover{border-color:#93c5fd;background:#eff6ff}\n.tab-btn.active{background:#2563eb;color:#fff;border-color:#2563eb}\n.tc{font-weight:700;margin-left:3px}\n.mag-select{padding:5px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:0.78rem;outline:none;background:#fff;cursor:pointer}\n.mag-select:focus{border-color:#2563eb}\n.search-box{margin-left:auto;position:relative;flex-shrink:0}\n.search-box input{padding:6px 12px 6px 28px;border:1px solid #e5e7eb;border-radius:8px;font-size:0.8rem;width:180px;outline:none;transition:border 0.2s}\n.search-box input:focus{border-color:#2563eb}\n.search-box::before{content:'\\u{1F50D}';position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:0.75rem}\n\n.table-wrap{flex:1;overflow:auto;padding:0}\ntable{width:100%;border-collapse:collapse;font-size:0.82rem}\nthead{position:sticky;top:0;z-index:10}\nth{background:#f9fafb;border-bottom:2px solid #e5e7eb;padding:8px 12px;text-align:left;font-weight:600;color:#6b7280;font-size:0.73rem;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;cursor:pointer;user-select:none;transition:color 0.15s}\nth:hover{color:#2563eb}\nth.sorted-asc::after{content:\" \\u25B2\";font-size:0.6rem}\nth.sorted-desc::after{content:\" \\u25BC\";font-size:0.6rem}\ntd{padding:8px 12px;border-bottom:1px solid #f3f4f6;vertical-align:middle}\n.frow{transition:background 0.12s}\n.frow:hover{background:#eff6ff}\n.al-r{text-align:right;font-variant-numeric:tabular-nums}\n.col-num{font-weight:700;color:#2563eb;white-space:nowrap}\n.col-date{color:#6b7280;white-space:nowrap}\n.col-client{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.mag-badge{font-size:0.72rem;padding:2px 8px;background:#f3f4f6;border-radius:6px;color:#6b7280;white-space:nowrap}\n.col-montant{white-space:nowrap}\n.pay-badge{font-size:0.72rem;padding:3px 10px;border-radius:12px;font-weight:600;border:1px solid;white-space:nowrap}\n.empty-row{text-align:center;padding:40px;color:#6b7280;font-size:1rem}\n\n.tfoot-row td{background:#f9fafb;font-weight:700;border-top:2px solid #e5e7eb;padding:10px 12px}\n.tfoot-row .lbl{color:#374151;font-size:0.82rem}\n\n@media(max-width:768px){\n  .nav-user .nav-urole{display:none}\n  .topbar{padding:8px 14px;gap:8px}\n  .topbar h1{font-size:1rem}\n  .toolbar{padding:6px 14px}\n  .search-box input{width:130px}\n  th,td{padding:6px 8px;font-size:0.78rem}\n  .col-mag{display:none}\n}\n@media(max-width:480px){\n  .main-nav{padding:8px 12px;gap:8px;font-size:0.8rem}\n  .nav-brand{font-size:0.9rem}\n  .nav-link{padding:4px 7px;font-size:0.75rem}\n  .nav-uname{display:none}\n  .kpi-row{display:none}\n  .search-box input{width:100px}\n  .col-mag,.col-date{display:none}\n  th,td{padding:5px 6px;font-size:0.75rem}\n}\n  </style>\n</head>\n<body>\n${buildNav(userName, userRole, token, baseUrl, \"comptabilite\")}\n\n<div class=\"topbar\">\n  <h1><span class=\"hl\">\\u{1F4B0}</span> Comptabilit\\u00e9</h1>\n  <div class=\"kpi-row\">\n    <div class=\"kp accent\"><span class=\"kv\" style=\"color:#2563eb\">${totalFactures}</span> factures</div>\n    <div class=\"kp\"><span class=\"kv\" style=\"color:#059669\">${fmt(totalCA)} \\u20ac</span> CA</div>\n    <div class=\"kp\"><span class=\"kv\" style=\"color:#2563eb\">${fmt(totalAcomptes)} \\u20ac</span> encaiss\\u00e9</div>\n    <div class=\"kp\"><span class=\"kv\" style=\"color:${totalReste > 0 ? '#dc2626' : '#059669'}\">${fmt(totalReste)} \\u20ac</span> reste</div>\n    <div class=\"kp\"><div class=\"bar\"><div class=\"bar-fill\" style=\"width:${pctEncaisse}%;background:${pctEncaisse >= 80 ? '#059669' : (pctEncaisse >= 50 ? '#d97706' : '#dc2626')}\"></div></div> ${pctEncaisse}%</div>\n${totalDiscount > 0 ? '<div class=\"kp\"><span class=\"kv\" style=\"color:#7c3aed\">' + fmt(totalDiscount) + ' \\u20ac</span> remises</div>' : ''}\n  </div>\n</div>\n\n<div class=\"toolbar\">\n  ${tabsHtml}\n  <select class=\"mag-select\" onchange=\"filterMagasin(this.value)\">${magasinOpts}</select>\n  <div class=\"search-box\"><input type=\"text\" placeholder=\"Rechercher...\" oninput=\"doSearch(this.value)\"></div>\n</div>\n\n<div class=\"table-wrap\">\n<table>\n<thead><tr>\n  <th data-col=\"num\" onclick=\"sortCol('num')\">N\\u00b0</th>\n  <th data-col=\"date\" onclick=\"sortCol('date')\">Date</th>\n  <th data-col=\"client\" onclick=\"sortCol('client')\">Client</th>\n  <th class=\"col-mag\" data-col=\"magasin\" onclick=\"sortCol('magasin')\">Magasin</th>\n  <th class=\"al-r\" data-col=\"ttc\" onclick=\"sortCol('ttc')\">Total TTC</th>\n  <th class=\"al-r\" data-col=\"acompte\" onclick=\"sortCol('acompte')\">Acompte</th>\n  <th class=\"al-r\" data-col=\"reste\" onclick=\"sortCol('reste')\">Reste</th>\n  <th data-col=\"statut\" onclick=\"sortCol('statut')\">Paiement</th>\n</tr></thead>\n<tbody id=\"ftbody\">\n  ${rowsHtml}\n</tbody>\n<tfoot>\n  <tr class=\"tfoot-row\">\n    <td colspan=\"4\" class=\"lbl\">${totalFactures} facture${totalFactures > 1 ? \"s\" : \"\"}</td>\n    <td class=\"al-r\">${fmt(totalCA)} \\u20ac</td>\n    <td class=\"al-r\">${fmt(totalAcomptes)} \\u20ac</td>\n    <td class=\"al-r\" style=\"color:${totalReste > 0 ? '#dc2626' : '#059669'}\">${fmt(totalReste)} \\u20ac</td>\n    <td></td>\n  </tr>\n</tfoot>\n</table>\n</div>\n\n<script>\nlet currentStatut = \"all\";\nlet currentMagasin = \"all\";\nlet currentSearch = \"\";\nlet sortKey = \"\";\nlet sortDir = 0;\n\nfunction filterStatut(s) {\n  currentStatut = s;\n  document.querySelectorAll(\".tab-btn\").forEach(b => b.classList.remove(\"active\"));\n  event.target.closest(\".tab-btn\").classList.add(\"active\");\n  applyFilters();\n}\n\nfunction filterMagasin(m) {\n  currentMagasin = m;\n  applyFilters();\n}\n\nfunction doSearch(v) {\n  currentSearch = v.toLowerCase().trim();\n  applyFilters();\n}\n\nfunction applyFilters() {\n  let visCount = 0, visTTC = 0, visAcompte = 0;\n  document.querySelectorAll(\"#ftbody .frow\").forEach(row => {\n    const ms = currentStatut === \"all\" || row.dataset.statut === currentStatut;\n    const mm = currentMagasin === \"all\" || row.dataset.magasin === currentMagasin;\n    const mq = !currentSearch || row.dataset.search.includes(currentSearch);\n    const show = ms && mm && mq;\n    row.style.display = show ? \"\" : \"none\";\n    if (show) {\n      visCount++;\n      const cells = row.querySelectorAll(\"td.col-montant\");\n      if (cells[0]) visTTC += parseFloat(cells[0].textContent.replace(/[^\\d.,-]/g,\"\").replace(\",\",\".\")) || 0;\n      if (cells[1]) visAcompte += parseFloat(cells[1].textContent.replace(/[^\\d.,-]/g,\"\").replace(\",\",\".\")) || 0;\n    }\n  });\n  const tf = document.querySelector(\".tfoot-row\");\n  if (tf) {\n    const tds = tf.querySelectorAll(\"td\");\n    tds[0].textContent = visCount + \" facture\" + (visCount > 1 ? \"s\" : \"\") + \" affich\\u00e9e\" + (visCount > 1 ? \"s\" : \"\");\n  }\n}\n\nfunction sortCol(col) {\n  if (sortKey === col) { sortDir = sortDir === 1 ? -1 : 1; }\n  else { sortKey = col; sortDir = 1; }\n  document.querySelectorAll(\"th\").forEach(th => { th.classList.remove(\"sorted-asc\",\"sorted-desc\"); });\n  const th = document.querySelector(\"th[data-col='\" + col + \"']\");\n  if (th) th.classList.add(sortDir === 1 ? \"sorted-asc\" : \"sorted-desc\");\n  const tbody = document.getElementById(\"ftbody\");\n  const rows = Array.from(tbody.querySelectorAll(\".frow\"));\n  rows.sort((a, b) => {\n    let va, vb;\n    const colIdx = {\"num\":0,\"date\":1,\"client\":2,\"magasin\":3,\"ttc\":4,\"acompte\":5,\"reste\":6,\"statut\":7};\n    const ci = colIdx[col] ?? 0;\n    const ca = a.querySelectorAll(\"td\")[ci];\n    const cb = b.querySelectorAll(\"td\")[ci];\n    if (!ca || !cb) return 0;\n    if ([\"ttc\",\"acompte\",\"reste\"].includes(col)) {\n      va = parseFloat(ca.textContent.replace(/[^\\d.,-]/g,\"\").replace(\",\",\".\")) || 0;\n      vb = parseFloat(cb.textContent.replace(/[^\\d.,-]/g,\"\").replace(\",\",\".\")) || 0;\n    } else {\n      va = ca.textContent.toLowerCase();\n      vb = cb.textContent.toLowerCase();\n    }\n    if (va < vb) return -1 * sortDir;\n    if (va > vb) return 1 * sortDir;\n    return 0;\n  });\n  rows.forEach(r => tbody.appendChild(r));\n}\n</script>\n</body>\n</html>`;\n\nreturn [{json: {html}}];"
+      },
+      "id": "b65ac11d-22d2-4574-8e2f-bcc507dd01b9",
+      "name": "Generate Comptabilite HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "8c2bda63-346a-4abf-a4e1-b7010e2818d1",
+      "name": "Respond HTML",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const baseUrl = $('Webhook Comptabilite').first().json.headers?.host || 'localhost';\nconst currentUrl = `https://${baseUrl}/webhook/comptabilite`;\nconst loginUrl = `https://${baseUrl}/webhook/login?redirect_url=${encodeURIComponent(currentUrl)}`;\n\nreturn [{ json: { redirect_url: loginUrl } }];"
+      },
+      "id": "760c09e0-fc9a-4ed7-8250-dbcf1d46a05f",
+      "name": "Build Login Redirect",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=Redirecting to login...",
+        "options": {
+          "responseCode": 302,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Location",
+                "value": "={{ $json.redirect_url }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "e6f34272-79d4-4686-9712-d9236a60630e",
+      "name": "Redirect To Login",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -672,
+        432
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Comptabilite": {
+      "main": [
+        [
+          {
+            "node": "Parse Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Parameters": {
+      "main": [
+        [
+          {
+            "node": "Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Search User By Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Login Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search User By Token": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Store User Info",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Login Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store User Info": {
+      "main": [
+        [
+          {
+            "node": "Check Role",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Role": {
+      "main": [
+        [
+          {
+            "node": "Fetch Factures",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Access Denied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Factures": {
+      "main": [
+        [
+          {
+            "node": "Fetch Clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Clients": {
+      "main": [
+        [
+          {
+            "node": "Generate Comptabilite HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Comptabilite HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Login Redirect": {
+      "main": [
+        [
+          {
+            "node": "Redirect To Login",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-06 14:34:13.364",
+  "updatedAt": "2026-03-24 14:04:28.497",
+  "description": ""
+}

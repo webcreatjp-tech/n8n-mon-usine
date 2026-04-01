@@ -1,0 +1,1211 @@
+{
+  "id": "OkBki3YK6RioudFi",
+  "name": "03-validation-commandes",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "validation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "4ebc4a25-a5c2-4c1b-9f6b-d163e951656e",
+      "name": "Webhook Validation",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2464,
+        656
+      ],
+      "webhookId": "validation-commande"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst bonId = query.bon_id || '';\nconst action = query.action || 'view';\nconst responsable = query.responsable || '';\nconst motif = query.motif || '';\nconst token = query.token || '';\nconst data = query.data || '';\n\nreturn [{\n  json: {\n    bon_id: bonId ? decodeURIComponent(bonId) : '',\n    action,\n    responsable,\n    motif,\n    token,\n    data,\n    error: false,\n    message: ''\n  }\n}];"
+      },
+      "id": "c7e217f7-9f86-4f85-bfdd-92f78084b2b3",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2240,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-token",
+              "leftValue": "={{ $json.token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "07fd9d08-85c6-4156-a740-3c10bbfdeb31",
+      "name": "Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2016,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const baseUrl = $('Webhook Validation').first().json.headers?.host || 'localhost';\nconst query = $('Webhook Validation').first().json.query || {};\nconst bonId = query.bon_id || '';\nconst action = query.action || 'view';\n\nlet currentUrl = `https://${baseUrl}/webhook/validation`;\nif (bonId) currentUrl += `?bon_id=${encodeURIComponent(bonId)}&action=${action}`;\n\nconst loginUrl = `https://${baseUrl}/webhook/login?redirect_url=${encodeURIComponent(currentUrl)}`;\n\nreturn [{\n  json: {\n    redirect_url: loginUrl\n  }\n}];"
+      },
+      "id": "6e9de958-c1e3-46af-b32c-b4d9fe31c4b0",
+      "name": "Build Login Redirect",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1344,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=Redirecting to login...",
+        "options": {
+          "responseCode": 302,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Location",
+                "value": "={{ $json.redirect_url }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "d06241e6-a765-4833-a703-ea7d10a182f0",
+      "name": "Redirect To Login",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1120,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM utilisateurs WHERE token_session = '{{ $('Parse Parameters').first().json.token }}' AND actif = true AND token_expiration > NOW()",
+        "options": {}
+      },
+      "id": "d0d10018-fced-4941-abbf-bf061108d7a2",
+      "name": "Search User By Token",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1792,
+        576
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "user-found",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2400e465-102c-463f-ae06-ae85b3205470",
+      "name": "Token Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1568,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check role permission for validation page\nconst ALLOWED_ROLES = ['commercial', 'responsable', 'patron', 'webmaster'];\n\nconst user = $input.first().json;\nconst fields = user.fields || user;\nconst params = $('Parse Parameters').first().json;\nconst userRole = fields.role || '';\nconst userName = fields.nom_complet || fields.nom_utilisateur || 'Utilisateur';\nconst hasAccess = ALLOWED_ROLES.includes(userRole);\n\nreturn [{\n  json: {\n    user_id: user.id,\n    nom_complet: userName,\n    role: userRole,\n    token: params.token,\n    has_access: hasAccess,\n    bon_id: params.bon_id,\n    action: params.action,\n    responsable: params.responsable,\n    motif: params.motif,\n    error: params.error,\n    message: params.message || ''\n  }\n}];"
+      },
+      "id": "a7d58209-f8c0-4c35-a739-9db99b418567",
+      "name": "Check Role Permission",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1344,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-access",
+              "leftValue": "={{ $json.has_access }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2a2a0473-e5cf-4606-952f-1068e8d6ad55",
+      "name": "Has Access?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Accès refusé</title><style>body{font-family:sans-serif;background:#f0f2f5;color:#111827;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.denied{background:#fef2f2;border:1px solid #fecaca;padding:40px;border-radius:14px;text-align:center;max-width:400px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}h1{color:#dc2626;margin:0 0 15px}p{color:#6b7280;margin:0 0 20px}a{color:#2563eb;text-decoration:none}</style></head><body><div class=\"denied\"><h1>Accès refusé</h1><p>Votre rôle ({{ $json.role }}) ne permet pas d'accéder à la page de validation.<br>Rôles autorisés : Commercial, Responsable, Patron, Webmaster</p><a href=\"/webhook/login\">Se reconnecter</a></div></body></html>",
+        "options": {
+          "responseCode": 403,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "4657bb64-48b1-4cab-9c9b-7a887fd9b84a",
+      "name": "Respond Access Denied",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -896,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.bon_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "81094c24-7fa5-4f9f-b440-394bfae15a10",
+      "name": "Has Bon ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Erreur</title><style>body{font-family:sans-serif;background:#f0f2f5;color:#111827;display:flex;justify-content:center;align-items:center;min-height:100vh}.error{background:#fef2f2;border:1px solid #fecaca;padding:40px;border-radius:14px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.04)}h1{color:#dc2626;margin:0 0 15px}p{color:#6b7280;margin:0}</style></head><body><div class=\"error\"><h1>Erreur</h1><p>{{ $json.message || 'Paramètre manquant' }}</p></div></body></html>",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ea196d29-dc64-4625-be26-22a710b1ac15",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -128,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.*, f.id as facture_record_id, f.facture_num, f.client_id FROM produits p LEFT JOIN factures f ON f.id = p.facture_id WHERE p.produit_id = '{{ $json.bon_id }}'",
+        "options": {}
+      },
+      "id": "9412116e-dd55-4f9e-94e1-ec77dc916703",
+      "name": "Search Product",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -672,
+        528
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const product = $('Search Product').first().json;\nconst params = $('Check Role Permission').first().json;\nconst action = params.action;\nconst responsable = params.nom_complet;\nconst motif = params.motif;\nconst bonId = params.bon_id;\nconst token = params.token;\nconst now = new Date().toISOString();\n\nif (!product || !product.id) {\n  return [{\n    json: {\n      success: false, error: true,\n      message: 'Produit non trouvé ou déjà traité: ' + bonId,\n      bon_id: bonId, user_name: params.nom_complet,\n      user_role: params.role, user_token: token\n    }\n  }];\n}\n\nconst fields = product.fields || product;\nconst recordId = product.id;\n\n// Get invoice and client data from enrichment nodes\nconst invItem = $('Get Invoice').first().json;\nconst invF = invItem.fields || invItem;\nconst cliItem = $('Get Client').first().json;\nconst cliF = cliItem.fields || cliItem;\n\n// Étapes par catégorie\nconst ETAPES_PAR_CATEGORIE = {\n  'Store banne': ['Découpe toile','Couture','Découpe armature','Assemblage','Réglage','Emballage','Expédition','Terminé'],\n  'Lambrequin': ['Découpe toile','Couture','Expédition','Terminé'],\n  'Rentoilage': ['Découpe toile','Couture','Expédition','Terminé'],\n  'Rentoilage double pente': ['Découpe toile','Couture','Expédition','Terminé'],\n  'Parasol': ['Expédition','Terminé'],\n  'Volet roulant': ['Envoyé par email','Terminé'],\n  'Moustiquaire': ['Envoyé par email','Terminé'],\n};\n\nconst categorie = fields.Categorie || '';\n\n// Cas spécial Lambrequin : si la même facture contient un Store banne, chaîne complète\nlet effectiveCategorie = categorie;\nif (categorie === 'Lambrequin') {\n  try {\n    const siblingProducts = $('Fetch Sibling Products').all();\n    const hasStoreBanne = siblingProducts.some(item => {\n      const f = item.json.fields || item.json;\n      return f.Categorie === 'Store banne';\n    });\n    if (hasStoreBanne) effectiveCategorie = 'Store banne';\n  } catch(e) { /* pas de siblings, on garde Lambrequin */ }\n}\n\nconst etapes = ETAPES_PAR_CATEGORIE[effectiveCategorie] || ETAPES_PAR_CATEGORIE['Store banne'];\nconst premiereEtape = etapes[0];\nconst isEmailProduct = categorie === 'Volet roulant' || categorie === 'Moustiquaire';\n\nconst productInfo = {\n  designation: fields.Designation || 'N/A',\n  categorie: categorie,\n  largeur: fields.Largeur_mm || '-',\n  hauteur: fields.Hauteur_mm || '-',\n  avancee: fields['avancée'] || fields.avancee || '-',\n  surface: fields.Surface_m2 || '-',\n  couleur_toile: fields.Couleur_toile || '-',\n  couleur_armature: fields.Couleur_armature || '-',\n  moteur: fields.Moteur || '-',\n  lambrequin: fields.Forme_lambrequin || '-',\n  jonc_haut: fields.Jonc_haut || '-',\n  jonc_bas: fields.Jonc_bas || '-',\n  capteur_vent: fields.Capteur_vent || '-',\n  leds: fields.LEDs || '-',\n  options: fields.Options_supplementaires || '-',\n  type_commande: fields.Type_commande || '-',\n  fixation: fields.Accessoires_fixation || '-',\n  kit_scellement: fields.Kit_scellement || '-',\n  cote_commande: fields.Cote_commande || '-',\n  product_summary: fields.product_summary || '',\n  accessories: fields.accessories || '',\n  selection: fields.selection || '',\n  confidence_score: fields.confidence_score ?? '',\n  validation_notes_ai: fields.validation_notes || '',\n  client: cliF.Nom || 'N/A',\n  client_email: cliF.Email || '-',\n  client_tel: cliF['Téléphone'] || cliF.Telephone || '-',\n  client_adresse: cliF.Adresse || '-',\n  client_adresse_livraison: cliF['Adresse livraison'] || '-',\n  client_ville: cliF.Ville || '-',\n  client_cp: cliF['Code postal'] || '-',\n  facture: invF['Numéro'] || invF['Numéro facture'] || 'N/A',\n  facture_date: (() => { const d = invF.Date; if (!d || d === '-') return '-'; const dt = new Date(d); return isNaN(dt) ? d : dt.toLocaleDateString('fr-FR'); })(),\n  magasin: invF.Magasin || '-',\n  total_ttc: invF.Total_TTC || '-',\n  acompte: invF.Acompte || '-',\n  paiement: invF.Paiement || '-',\n  prix_ttc: fields.Prix_total_TTC || '-',\n  remarque: fields.Remarque || '',\n  qr_code: fields.QR_Code || '',\n  url_produit: fields.URL_produit || '',\n  pdf_original: invF.PDF_original || '',\n  modele_decoupe: fields.modele_decoupe || ''\n};\n\nlet updateData = {};\nlet message = '';\nlet newStatus = fields.statut_validation;\n\nif (action === 'update') {\n  // Decode edited fields from data param\n  let editedFields = {};\n  try {\n    const dataParam = $('Parse Parameters').first().json.data || '';\n    if (dataParam) editedFields = JSON.parse(decodeURIComponent(dataParam));\n  } catch(e) {}\n\n  const NUM_FIELDS = ['Largeur_mm', 'Hauteur_mm', 'avanc\\u00e9e', 'Surface_m2', 'confidence_score'];\n  Object.entries(editedFields).forEach(([k, v]) => {\n    if (NUM_FIELDS.includes(k)) {\n      const num = parseFloat(v);\n      if (!isNaN(num)) updateData[k] = num;\n      else if (v === '' || v === '-') updateData[k] = null;\n    } else {\n      updateData[k] = v;\n    }\n  });\n\n  message = 'Produit modifi\\u00e9 par ' + responsable + '. Les champs ont \\u00e9t\\u00e9 mis \\u00e0 jour.';\n} else if (action === 'validate') {\n  updateData = {\n    statut_validation: 'Validé',\n    date_validation: now,\n    responsable_validation: responsable,\n    statut_production: premiereEtape\n  };\n  newStatus = 'Validé';\n  if (isEmailProduct) {\n    message = 'Commande validée par ' + responsable + ' ! Produit envoyé par email au fournisseur.';\n  } else {\n    message = 'Commande validée par ' + responsable + ' ! Le produit entre en production (' + premiereEtape + ').';\n  }\n} else if (action === 'reject') {\n  updateData = {\n    statut_validation: 'Rejeté',\n    date_validation: now,\n    responsable_validation: responsable,\n    Remarque: motif ? 'REJET: ' + motif : 'Commande rejetée'\n  };\n  newStatus = 'Rejeté';\n  message = 'Commande rejetée par ' + responsable + '.';\n} else {\n  message = 'Validation de commande en attente';\n}\n\nreturn [{\n  json: {\n    success: true, error: false,\n    bon_id: bonId, record_id: recordId,\n    action, responsable, motif, message,\n    statut_validation: newStatus,\n    product_info: productInfo,\n    update_data: updateData,\n    should_update: Object.keys(updateData).length > 0,\n    is_email_product: isEmailProduct && action === 'validate',\n    categorie: categorie,\n    timestamp: now,\n    user_name: params.nom_complet,\n    user_role: params.role,\n    user_token: token\n  }\n}];"
+      },
+      "id": "91f4588f-a45d-43a6-8e6e-42b0274c3d35",
+      "name": "Process Validation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.should_update }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "177fac77-4b75-47e7-9f65-2bf122e1b973",
+      "name": "Should Update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        224,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE produits SET statut_validation = '{{ $json.update_data ? $json.update_data.statut_validation : ($json.statut_validation || \"\") }}', statut_production = '{{ $json.update_data ? $json.update_data.statut_production : ($json.statut_production || \"\") }}', notes = '{{ $json.update_data ? $json.update_data.Remarque : ($json.notes || \"\") }}', updated_at = NOW() WHERE id = '{{ $json.record_id }}' RETURNING *",
+        "options": {}
+      },
+      "id": "9c6f31f9-3bc7-4b26-9414-c1304c304be1",
+      "name": "Update Validation Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        464,
+        656
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Vérifier si c'est un volet roulant validé → décrémenter stock\nconst data = $('Process Validation').first().json;\nconst isVolet = (data.categorie || '').toLowerCase().includes('volet');\nconst isValidation = data.action === 'validate';\n\nreturn [{ json: {\n  ...data,\n  trigger_stock: isVolet && isValidation,\n  reason: isVolet && isValidation\n    ? 'Volet roulant validé → décrement stock'\n    : `Pas de décrement: categorie=${data.categorie}, action=${data.action}`\n}}];"
+      },
+      "id": "77cf2c4c-867d-454e-829c-6377e5259f50",
+      "name": "Check Volet Pour Stock",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "trigger-stock-03",
+              "leftValue": "={{ $json.trigger_stock }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7c2866c8-4213-42c3-bd48-0bcc6938c6a7",
+      "name": "Trigger Stock?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1392,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.N8N_BASE_URL || 'http://localhost:5678') + '/webhook/stock-scan' }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "bonid",
+              "value": "={{ $json.bon_id }}"
+            },
+            {
+              "name": "token",
+              "value": "={{ $env.STOCK_WEBHOOK_TOKEN || 'ABC' }}"
+            },
+            {
+              "name": "action",
+              "value": "decrement"
+            },
+            {
+              "name": "qte",
+              "value": "={{ $json.product_info?.quantite || 1 }}"
+            },
+            {
+              "name": "operateur",
+              "value": "={{ $json.responsable || 'validation' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "b1fc2aa3-a45f-468f-a73a-867c4e52c09e",
+      "name": "POST stock-scan decrement",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1472,
+        912
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "function buildNav(userName, userRole, token, baseUrl, currentPage) {\n  const ADMIN = ['commercial','responsable','patron','webmaster'];\n  const isAdmin = ADMIN.includes(userRole);\n  const roleNames = { decoupe_toile:'D\\u00e9coupe toile', couture:'Couture', decoupe_armature:'D\\u00e9coupe armature', assemblage:'Assemblage', reglage:'R\\u00e9glage', emballage:'Emballage', expedition:'Exp\\u00e9dition', commercial:'Commercial', responsable:'Responsable', patron:'Patron', webmaster:'Webmaster' };\n  const roleDisplay = roleNames[userRole] || userRole;\n  const u = (p) => `https://${baseUrl}/webhook/${p}?token=${token}`;\n  const a = (page) => currentPage === page ? ' active' : '';\n  const links = [];\n  links.push({ label:'Accueil', page:'home', href:u('home') });\n  links.push({ label:'Production', page:'production', href:u('production') });\n  if (isAdmin) links.push({ label:'Validation', page:'validation', href:u('validation') });\n  if (isAdmin || userRole==='expedition') links.push({ label:'Dashboard', page:'dashboard', href:u('dashboard') });\n  if (['expedition','responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Exp\\u00e9dition', page:'expedition', href:u('expedition') });\n  if (isAdmin) links.push({ label:'Import', page:'upload', href:u('upload') });\n  if (['responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Compta', page:'comptabilite', href:u('comptabilite') });\n  if (userRole==='webmaster') links.push({ label:'Utilisateurs', page:'users', href:u('users') });\n  const linksHtml = links.map(l => `<a href=\"${l.href}\" class=\"nav-link${a(l.page)}\">${l.label}</a>`).join('');\n  return `<nav class=\"main-nav\"><a class=\"nav-brand\" href=\"${u('home')}\">MON USINE</a><div class=\"nav-links\">${linksHtml}</div><div class=\"nav-user\"><span class=\"nav-uname\">${userName}</span><span class=\"nav-urole\">${roleDisplay}</span><a class=\"nav-logout\" href=\"https://${baseUrl}/webhook/login\">D\\u00e9connexion</a></div></nav>`;\n}\n\nconst data = $('Process Validation').first().json;\nconst pi = data.product_info;\nif (!pi) {\n  const _host = $('Webhook Validation').first().json.headers?.host || 'localhost';\n  const _tok = data.user_token || '';\n  const _back = 'https://' + _host + '/webhook/validation?token=' + _tok;\n  const html = '<html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\"><title>Erreur</title></head><body style=\"font-family:sans-serif;background:#f0f2f5;color:#111827;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0\"><div style=\"background:#fef2f2;border:2px solid #dc2626;padding:40px;border-radius:15px;text-align:center;max-width:500px\"><h1 style=\"color:#dc2626;margin:0 0 15px\">Produit non trouv\\u00e9</h1><p style=\"color:#6b7280;margin:0 0 20px\">' + (data.message || 'Produit introuvable.') + '</p><a href=\"' + _back + '\" style=\"color:#2563eb;text-decoration:none\">&larr; Retour</a></div></body></html>';\n  return [{json: {html}}];\n}\n\nconst bonId = data.bon_id;\nconst fmtIso = (s) => s ? s.replace(/\\d{4}-\\d{2}-\\d{2}T[\\d:.]+[+-]\\d{2}:\\d{2}/g, m => { const d = new Date(m); return isNaN(d) ? m : d.toLocaleDateString('fr-FR'); }) : s;\nconst token = data.user_token;\nconst userName = data.user_name;\nconst userRole = data.user_role;\nconst baseUrl = $('Webhook Validation').first().json.headers?.host || 'localhost';\n\nconst validateUrl = `https://${baseUrl}/webhook/validation?bon_id=${encodeURIComponent(bonId)}&action=validate&token=${token}`;\nconst updateBaseUrl = `https://${baseUrl}/webhook/validation?bon_id=${encodeURIComponent(bonId)}&action=update&token=${token}`;\nconst listUrl = `https://${baseUrl}/webhook/validation?token=${token}`;\nconst bonProdUrl = `https://${baseUrl}/webhook/bon-production?bon_id=${encodeURIComponent(bonId)}&token=${token}`;\n\nconst statusColor = data.statut_validation === 'Valid\\u00e9' ? '#059669' : data.statut_validation === 'Rejet\\u00e9' ? '#dc2626' : '#d97706';\nconst statusLabel = data.statut_validation || 'En attente';\nconst canAct = statusLabel !== 'Valid\\u00e9';\nconst canEdit = ['responsable','patron','webmaster'].includes(userRole) && canAct;\nconst _pdfUrl = pi.pdf_original ? pi.pdf_original.replace('/preview','').replace('/view','') : '';\nconst adresseLiv = (pi.client_adresse_livraison && pi.client_adresse_livraison !== '-') ? pi.client_adresse_livraison : pi.client_adresse;\n\nfunction f(label, value, cls, fieldName, rawVal, inputType) {\n  if (!value || value === '-') return '';\n  const fattr = fieldName ? ' data-field=\"' + fieldName + '\" data-type=\"' + (inputType || 'text') + '\"' : '';\n  const rawAttr = (fieldName && rawVal !== undefined) ? ' data-raw=\"' + String(rawVal).replace(/\"/g, '&quot;') + '\"' : '';\n  return '<div class=\"di' + (cls ? ' ' + cls : '') + '\"' + fattr + '><div class=\"dl\">' + label + '</div><div class=\"dv\"' + rawAttr + '>' + value + '</div></div>';\n}\n\nlet specsHtml = '';\nspecsHtml += f('D\\u00e9signation', pi.designation, 'span2', 'Designation', pi.designation, 'text');\nif (pi.product_summary) specsHtml += f('R\\u00e9sum\\u00e9', pi.product_summary, 'span2');\nspecsHtml += f('Cat\\u00e9gorie', pi.categorie, '', 'Categorie', pi.categorie, 'text');\nspecsHtml += f('Prix TTC', pi.prix_ttc !== '-' ? pi.prix_ttc + ' \\u20ac' : '', '');\nspecsHtml += f('Largeur', pi.largeur !== '-' ? pi.largeur + ' mm' : '', '', 'Largeur_mm', pi.largeur, 'number');\nspecsHtml += f('Hauteur', pi.hauteur !== '-' ? pi.hauteur + ' mm' : '', '', 'Hauteur_mm', pi.hauteur, 'number');\nspecsHtml += f('Avanc\\u00e9e', pi.avancee !== '-' ? pi.avancee + ' mm' : '', '', 'avanc\\u00e9e', pi.avancee, 'number');\nspecsHtml += f('Surface', pi.surface !== '-' ? pi.surface + ' m\\u00b2' : '', '', 'Surface_m2', pi.surface, 'number');\nspecsHtml += f('Toile', pi.couleur_toile, 'span2', 'Couleur_toile', pi.couleur_toile, 'text');\nspecsHtml += f('Armature', pi.couleur_armature, '', 'Couleur_armature', pi.couleur_armature, 'text');\nspecsHtml += f('Moteur', pi.moteur, '', 'Moteur', pi.moteur, 'text');\nspecsHtml += f('Type commande', pi.type_commande, '', 'Type_commande', pi.type_commande, 'text');\nspecsHtml += f('Lambrequin', pi.lambrequin, '', 'Forme_lambrequin', pi.lambrequin, 'text');\nspecsHtml += f('Jonc haut', pi.jonc_haut, '', 'Jonc_haut', pi.jonc_haut, 'text');\nspecsHtml += f('Jonc bas', pi.jonc_bas, '', 'Jonc_bas', pi.jonc_bas, 'text');\nspecsHtml += f('Capteur vent', pi.capteur_vent, '', 'Capteur_vent', pi.capteur_vent, 'text');\nspecsHtml += f('LEDs', pi.leds, '', 'LEDs', pi.leds, 'text');\nspecsHtml += f('C\\u00f4t\\u00e9 commande', pi.cote_commande, '', 'Cote_commande', pi.cote_commande, 'text');\nspecsHtml += f('Kit scellement', pi.kit_scellement, '', 'Kit_scellement', pi.kit_scellement, 'text');\n\nif (pi.fixation && pi.fixation !== '-') {\n  specsHtml += '<div class=\"di span2 fixation\" data-field=\"Accessoires_fixation\" data-type=\"textarea\"><div class=\"dl\">Fixation</div><div class=\"dv\" data-raw=\"' + pi.fixation.replace(/\"/g, '&quot;') + '\">' + pi.fixation.replace(/\\n/g, '<br>') + '</div></div>';\n}\nif (pi.accessories) {\n  specsHtml += '<div class=\"di span2\" data-field=\"accessories\" data-type=\"textarea\"><div class=\"dl\">Accessoires</div><div class=\"dv\" data-raw=\"' + pi.accessories.replace(/\"/g, '&quot;') + '\">' + pi.accessories.replace(/\\n/g, '<br>') + '</div></div>';\n}\nif (pi.options && pi.options !== '-') {\n  specsHtml += '<div class=\"di span2\" data-field=\"Options_supplementaires\" data-type=\"textarea\"><div class=\"dl\">Options</div><div class=\"dv\" data-raw=\"' + pi.options.replace(/\"/g, '&quot;') + '\">' + pi.options.replace(/\\n/g, '<br>') + '</div></div>';\n}\nif (pi.selection) {\n  specsHtml += '<div class=\"di span2\" data-field=\"selection\" data-type=\"textarea\"><div class=\"dl\">S\\u00e9lection</div><div class=\"dv\" data-raw=\"' + pi.selection.replace(/\"/g, '&quot;') + '\">' + pi.selection.replace(/\\n/g, '<br>') + '</div></div>';\n}\n\nlet scoreBadge = '';\nif (pi.confidence_score !== '' && pi.confidence_score !== undefined) {\n  const sc = Number(pi.confidence_score);\n  const scColor = sc >= 80 ? '#059669' : (sc >= 50 ? '#d97706' : '#dc2626');\n  scoreBadge = '<div class=\"score-badge\" style=\"border-color:' + scColor + ';color:' + scColor + '\"><span class=\"score-val\">' + sc + '%</span><span class=\"score-lbl\">Confiance IA</span></div>';\n}\nlet aiNotes = pi.validation_notes_ai ? '<div class=\"ai-notes\">\\ud83e\\udd16 ' + pi.validation_notes_ai + '</div>' : '';\n\nconst html = `<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>Validation - ${fmtIso(bonId)}</title>\n<style>\n.main-nav{position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:12px;background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 18px;box-shadow:0 1px 3px rgba(0,0,0,0.06);font-size:0.85rem;flex-wrap:wrap}\n.nav-brand{color:#2563eb;font-weight:800;font-size:1rem;text-decoration:none;white-space:nowrap}\n.nav-links{display:flex;gap:4px;flex:1;overflow-x:auto;scrollbar-width:none}.nav-links::-webkit-scrollbar{display:none}\n.nav-link{color:#6b7280;text-decoration:none;padding:6px 10px;border-radius:8px;white-space:nowrap;transition:all 0.2s}.nav-link:hover{background:#eff6ff;color:#2563eb}.nav-link.active{background:#eff6ff;color:#2563eb;font-weight:600}\n.nav-user{display:flex;align-items:center;gap:8px;margin-left:auto;white-space:nowrap}.nav-uname{color:#2563eb;font-weight:600}.nav-urole{color:#6b7280;font-size:0.75rem}\n.nav-logout{color:#dc2626;text-decoration:none;font-size:0.8rem;padding:4px 8px;border:1px solid #fecaca;border-radius:6px}.nav-logout:hover{background:#fef2f2}\n*{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:'Segoe UI',-apple-system,sans-serif;background:#f0f2f5;color:#111827;min-height:100vh}\n.top-bar{display:flex;align-items:center;gap:16px;padding:14px 24px;background:#fff;border-bottom:1px solid #e5e7eb;flex-wrap:wrap}\n.top-bar .back{color:#6b7280;text-decoration:none;font-size:0.85rem}.top-bar .back:hover{color:#2563eb}\n.top-bar h1{font-size:1.15rem;font-weight:700;white-space:nowrap}\n.top-bar .bon-id{color:#d97706;font-weight:700;font-size:1rem;font-family:monospace}\n.status-pill{padding:4px 14px;border-radius:20px;font-weight:700;font-size:0.8rem;border:2px solid ${statusColor};color:${statusColor};white-space:nowrap}\n.top-bar .spacer{flex:1}\n.btn-pdf{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:#7c3aed;color:#fff;border-radius:8px;text-decoration:none;font-size:0.82rem;font-weight:600;white-space:nowrap}.btn-pdf:hover{background:#6d28d9}\n.layout{display:grid;grid-template-columns:340px 1fr;gap:0;min-height:calc(100vh - 110px)}\n.panel-left{background:#fff;border-right:1px solid #e5e7eb;padding:16px 20px;overflow-y:auto}\n.panel-right{padding:16px 24px;overflow-y:auto}\n.sec{margin-bottom:14px}\n.sec-title{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#9ca3af;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #f3f4f6}\n.info-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dotted #f3f4f6;font-size:0.88rem}\n.info-row .lbl{color:#6b7280;font-size:0.78rem}.info-row .val{font-weight:600;text-align:right;max-width:60%;word-break:break-word}\n.info-row.full{flex-direction:column;gap:2px}.info-row.full .val{text-align:left;max-width:100%}\n.specs-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n.di{background:#f9fafb;padding:10px 12px;border-radius:8px;border:1px solid #f3f4f6}\n.di.span2{grid-column:1/-1}\n.dl{font-size:0.68rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px}\n.dv{font-size:0.92rem;font-weight:600;color:#111827;word-break:break-word}\n.di.fixation{background:#e8f4fd;border-color:#90caf9}.di.fixation .dl{color:#1565c0;font-weight:700}\n.score-badge{display:inline-flex;flex-direction:column;align-items:center;padding:8px 16px;border:2px solid;border-radius:10px;margin-bottom:10px}\n.score-val{font-size:1.4rem;font-weight:900}.score-lbl{font-size:0.65rem;text-transform:uppercase;letter-spacing:0.5px;opacity:0.8}\n.ai-notes{background:#f0f4ff;border:1px solid #c7d2fe;border-radius:8px;padding:8px 12px;font-size:0.82rem;color:#4338ca;margin-bottom:10px}\n.qr-mini{display:flex;align-items:center;gap:10px;padding:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin-top:8px}\n.qr-mini img{width:60px;height:60px;border-radius:6px}.qr-mini .qr-text{font-size:0.78rem;color:#6b7280}\n.remark-box{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;margin-top:8px}\n.rl{font-size:0.72rem;color:#e65100;font-weight:700;text-transform:uppercase;margin-bottom:4px}\n.rv{font-size:0.9rem;white-space:pre-line}\n.actions-bar{position:sticky;bottom:0;background:#fff;border-top:2px solid #e5e7eb;padding:12px 24px;display:flex;gap:12px;align-items:center;box-shadow:0 -2px 10px rgba(0,0,0,0.06);z-index:50;flex-wrap:wrap}\n.actions-bar .btn{flex:0 0 auto;padding:12px 24px;border:none;border-radius:10px;font-size:0.95rem;font-weight:700;cursor:pointer;text-decoration:none;text-align:center;transition:all 0.15s;color:#fff;white-space:nowrap}\n.actions-bar .btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.15)}\n.btn-validate{background:#059669}\n.btn-edit{background:#d97706}.btn-edit:hover{background:#b45309}\n.btn-save{background:#059669}.btn-cancel-edit{background:#6b7280}\n.btn-disabled{background:#f3f4f6;color:#9ca3af!important;pointer-events:none;border:1px solid #e5e7eb}\n.btn-print-prod{background:linear-gradient(135deg,#2563eb,#1d4ed8)}\n.act-spacer{flex:1}\n.act-info{font-size:0.82rem;color:#6b7280}\n\n.edit-input{width:100%;padding:6px 8px;border:2px solid #d97706;border-radius:6px;font-size:0.88rem;font-family:inherit;outline:none;background:#fff}\n.edit-input:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,0.15)}\ntextarea.edit-input{min-height:60px;resize:vertical}\n.editing .di[data-field]{border-color:#d97706;background:#fffbeb}\n.edit-actions{display:none}.editing .edit-actions{display:flex}.editing .view-actions{display:none}\n@media(max-width:1024px){.layout{grid-template-columns:1fr;min-height:auto}.panel-left{border-right:none;border-bottom:1px solid #e5e7eb}}\n@media(max-width:768px){.top-bar{padding:10px 14px;gap:10px}.panel-left,.panel-right{padding:12px 14px}.specs-grid{grid-template-columns:1fr 1fr}.actions-bar{padding:10px 14px;gap:8px}.nav-user .nav-urole{display:none}}\n@media(max-width:480px){.main-nav{padding:8px 12px;gap:8px;font-size:0.8rem}.nav-brand{font-size:0.9rem}.nav-link{padding:4px 7px;font-size:0.75rem}.nav-uname{display:none}.specs-grid{grid-template-columns:1fr}}\n</style>\n</head>\n<body>\n${buildNav(userName, userRole, token, baseUrl, \"validation\")}\n\n<div class=\"top-bar\">\n  <a href=\"${listUrl}\" class=\"back\">\\u2190 Commandes</a>\n  <h1>Validation</h1>\n  <span class=\"bon-id\">${fmtIso(bonId)}</span>\n  <span class=\"status-pill\">${statusLabel}</span>\n  <span class=\"spacer\"></span>\n  ${_pdfUrl ? '<a href=\"' + _pdfUrl + '\" target=\"_blank\" rel=\"noopener\" class=\"btn-pdf\">\\ud83d\\udcc4 PDF</a>' : ''}\n</div>\n\n${data.message ? '<div style=\"background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 24px;text-align:center;font-size:0.9rem;color:#059669;font-weight:600\">' + data.message + '</div>' : ''}\n\n<div class=\"layout\">\n  <div class=\"panel-left\">\n    <div class=\"sec\"><div class=\"sec-title\">Client</div>\n      <div class=\"info-row\"><span class=\"lbl\">Nom</span><span class=\"val\">${pi.client}</span></div>\n      <div class=\"info-row\"><span class=\"lbl\">T\\u00e9l</span><span class=\"val\">${pi.client_tel}</span></div>\n      ${pi.client_email !== '-' ? '<div class=\"info-row\"><span class=\"lbl\">Email</span><span class=\"val\">' + pi.client_email + '</span></div>' : ''}\n      <div class=\"info-row full\"><span class=\"lbl\">Adresse livraison</span><span class=\"val\">${adresseLiv}${pi.client_cp !== '-' ? ' - ' + pi.client_cp + ' ' + pi.client_ville : ''}</span></div>\n    </div>\n    <div class=\"sec\"><div class=\"sec-title\">Facture</div>\n      <div class=\"info-row\"><span class=\"lbl\">N\\u00b0</span><span class=\"val\">${pi.facture}</span></div>\n      <div class=\"info-row\"><span class=\"lbl\">Date</span><span class=\"val\">${pi.facture_date}</span></div>\n      <div class=\"info-row\"><span class=\"lbl\">Magasin</span><span class=\"val\">${pi.magasin}</span></div>\n      <div class=\"info-row\"><span class=\"lbl\">Total TTC</span><span class=\"val\">${pi.total_ttc} \\u20ac</span></div>\n      <div class=\"info-row\"><span class=\"lbl\">Acompte</span><span class=\"val\">${pi.acompte} \\u20ac</span></div>\n      <div class=\"info-row\"><span class=\"lbl\">Paiement</span><span class=\"val\">${pi.paiement}</span></div>\n    </div>\n    ${scoreBadge || aiNotes ? '<div class=\"sec\"><div class=\"sec-title\">Extraction IA</div>' + scoreBadge + aiNotes + '</div>' : ''}\n    ${pi.qr_code ? '<div class=\"qr-mini\"><img src=\"' + pi.qr_code + '\" alt=\"QR\"/><div class=\"qr-text\">QR Production<br><strong>' + fmtIso(bonId) + '</strong></div></div>' : ''}\n  </div>\n  <div class=\"panel-right\">\n    <div class=\"sec\"><div class=\"sec-title\">Produit</div>\n      <div class=\"specs-grid\">${specsHtml}</div>\n      ${pi.remarque ? '<div class=\"remark-box\" data-field=\"Remarque\" data-type=\"textarea\"><div class=\"rl\">\\u26a0 Remarque</div><div class=\"rv\" data-raw=\"' + pi.remarque.replace(/\"/g, '&quot;') + '\">' + pi.remarque.replace(/\\n/g, '<br>') + '</div></div>' : ''}\n    </div>\n  </div>\n</div>\n\n<div class=\"actions-bar\">\n  <div class=\"view-actions\" style=\"display:flex;gap:12px;align-items:center;flex:1;flex-wrap:wrap\">\n    ${canAct ? '<a href=\"' + validateUrl + '\" class=\"btn btn-validate\">\\u2713 Valider</a>' +\n      (canEdit ? '<button class=\"btn btn-edit\" onclick=\"toggleEdit()\">\\u270e Modifier</button>' : '') +\n      '<span class=\"act-spacer\"></span><span class=\"act-info\">' + fmtIso(bonId) + '</span>'\n    : '<span class=\"btn btn-disabled\">\\u2713 Valid\\u00e9e</span>' +\n      '<a href=\"' + bonProdUrl + '\" class=\"btn btn-print-prod\" target=\"_blank\">\\ud83d\\udccb Bon de production</a>' +\n      '<span class=\"act-spacer\"></span><a href=\"' + listUrl + '\" class=\"btn\" style=\"background:#e5e7eb;color:#374151\">\\u2190 Retour</a>'}\n  </div>\n  <div class=\"edit-actions\" style=\"gap:12px;align-items:center;flex:1;flex-wrap:wrap\">\n    <button class=\"btn btn-save\" onclick=\"saveEdit()\">\\u{1F4BE} Sauvegarder</button>\n    <button class=\"btn btn-cancel-edit\" onclick=\"cancelEdit()\">Annuler</button>\n    <span class=\"act-spacer\"></span>\n    <span class=\"act-info\">Mode \\u00e9dition</span>\n  </div>\n</div>\n\n<script>\n\nfunction toggleEdit(){\n  document.body.classList.add(\"editing\");\n  document.querySelectorAll(\"[data-field]\").forEach(div => {\n    const field = div.dataset.field;\n    const type = div.dataset.type || \"text\";\n    const dv = div.querySelector(\".dv\") || div.querySelector(\".rv\");\n    if (!dv) return;\n    const raw = dv.dataset.raw || dv.textContent.trim();\n    let input;\n    if (type === \"textarea\") {\n      input = document.createElement(\"textarea\");\n      input.value = raw;\n    } else {\n      input = document.createElement(\"input\");\n      input.type = type === \"number\" ? \"number\" : \"text\";\n      input.value = raw;\n    }\n    input.className = \"edit-input\";\n    input.dataset.field = field;\n    dv.style.display = \"none\";\n    dv.parentNode.insertBefore(input, dv.nextSibling);\n  });\n}\n\nfunction cancelEdit(){\n  document.body.classList.remove(\"editing\");\n  document.querySelectorAll(\".edit-input\").forEach(el => el.remove());\n  document.querySelectorAll(\".dv, .rv\").forEach(el => el.style.display = \"\");\n}\n\nfunction saveEdit(){\n  const fields = {};\n  document.querySelectorAll(\".edit-input[data-field]\").forEach(input => {\n    fields[input.dataset.field] = input.value;\n  });\n  if (Object.keys(fields).length === 0) { cancelEdit(); return; }\n  const url = '${updateBaseUrl}&data=' + encodeURIComponent(JSON.stringify(fields));\n  window.location.href = url;\n}\n</script>\n</body>\n</html>`;\n\nreturn [{json: {html}}];"
+      },
+      "id": "84f48d6b-80b5-4afc-ae1a-f1ad6026d0b7",
+      "name": "Generate HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "5bf03f98-806b-473a-b2dc-da462d8d874e",
+      "name": "Respond HTML",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1568,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.*, f.id as facture_record_id, f.facture_num, f.magasin, f.client_id FROM produits p LEFT JOIN factures f ON f.id = p.facture_id WHERE p.statut_validation IN ('En attente', 'Validé', 'À réviser') ORDER BY p.created_at DESC",
+        "options": {}
+      },
+      "id": "44a079ee-f4df-43b8-b18f-927213a752ff",
+      "name": "Search All Orders",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function buildNav(userName, userRole, token, baseUrl, currentPage) {\n  const ADMIN = ['commercial','responsable','patron','webmaster'];\n  const isAdmin = ADMIN.includes(userRole);\n  const roleNames = { decoupe_toile:'D\\u00e9coupe toile', couture:'Couture', decoupe_armature:'D\\u00e9coupe armature', assemblage:'Assemblage', reglage:'R\\u00e9glage', emballage:'Emballage', expedition:'Exp\\u00e9dition', commercial:'Commercial', responsable:'Responsable', patron:'Patron', webmaster:'Webmaster' };\n  const roleDisplay = roleNames[userRole] || userRole;\n  const u = (p) => `https://${baseUrl}/webhook/${p}?token=${token}`;\n  const a = (page) => currentPage === page ? ' active' : '';\n  const links = [];\n  links.push({ label:'Accueil', page:'home', href:u('home') });\n  links.push({ label:'Production', page:'production', href:u('production') });\n  if (isAdmin) links.push({ label:'Validation', page:'validation', href:u('validation') });\n  if (isAdmin || userRole==='expedition') links.push({ label:'Dashboard', page:'dashboard', href:u('dashboard') });\n  if (['expedition','responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Exp\\u00e9dition', page:'expedition', href:u('expedition') });\n  if (isAdmin) links.push({ label:'Import', page:'upload', href:u('upload') });\n  if (['responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Compta', page:'comptabilite', href:u('comptabilite') });\n  if (userRole==='webmaster') links.push({ label:'Utilisateurs', page:'users', href:u('users') });\n  const linksHtml = links.map(l => `<a href=\"${l.href}\" class=\"nav-link${a(l.page)}\">${l.label}</a>`).join('');\n  return `<nav class=\"main-nav\">\n    <a class=\"nav-brand\" href=\"${u('home')}\">MON USINE</a>\n    <div class=\"nav-links\">${linksHtml}</div>\n    <div class=\"nav-user\">\n      <span class=\"nav-uname\">${userName}</span>\n      <span class=\"nav-urole\">${roleDisplay}</span>\n      <a class=\"nav-logout\" href=\"https://${baseUrl}/webhook/login\">D\\u00e9connexion</a>\n    </div>\n  </nav>`;\n}\n\nconst items = $input.all();\nconst params = $('Check Role Permission').first().json;\nconst token = params.token;\nconst userName = params.nom_complet;\nconst userRole = params.role;\nconst baseUrl = $('Webhook Validation').first().json.headers?.host || 'localhost';\nconst fmtIso = (s) => s ? s.replace(/\\d{4}-\\d{2}-\\d{2}T[\\d:.]+[+-]\\d{2}:\\d{2}/g, m => { const d = new Date(m); return isNaN(d) ? m : d.toLocaleDateString('fr-FR'); }) : s;\n\nconst products = items.filter(i => i.json && i.json.id).map(i => {\n  const f = i.json.fields || i.json;\n  return {\n    id: f.produit_id || i.json.id,\n    designation: f.Designation || 'N/A',\n    categorie: f.Categorie || '-',\n    client: i.json._client_nom || 'N/A',\n    facture: i.json._facture_num || 'N/A',\n    largeur: f.Largeur_mm || '',\n    hauteur: f.Hauteur_mm || '',\n    avancee: f['avanc\\u00e9e'] || f.avancee || '',\n    couleur_toile: f.Couleur_toile || '',\n    couleur_armature: f.Couleur_armature || '',\n    moteur: f.Moteur || '',\n    prix: f.Prix_total_TTC || '-',\n    statut: f.statut_validation || 'En attente',\n    score: f.confidence_score ?? '',\n    remarque: f.Remarque || ''\n  };\n});\n\nconst count = products.length;\nconst pendingCount = products.filter(p => p.statut === 'En attente').length;\nconst validatedCount = products.filter(p => p.statut === 'Valid\\u00e9').length;\nconst rejectedCount = products.filter(p => p.statut === 'Rejet\\u00e9').length;\n\n// Build table rows with data attributes for filtering\nlet rowsHtml = '';\nif (count === 0) {\n  rowsHtml = '<tr><td colspan=\"12\" class=\"empty\">Aucune commande</td></tr>';\n} else {\n  products.forEach(p => {\n    const url = `https://${baseUrl}/webhook/validation?bon_id=${encodeURIComponent(p.id)}&token=${token}`;\n    const desig = p.designation.length > 30 ? p.designation.substring(0, 30) + '...' : p.designation;\n\n    let stCls = 'st-wait';\n    let stText = 'En attente';\n    if (p.statut === 'Valid\\u00e9') { stCls = 'st-ok'; stText = 'Valid\\u00e9'; }\n    else if (p.statut === 'Rejet\\u00e9') { stCls = 'st-rej'; stText = 'Rejet\\u00e9'; }\n\n    const printBtn = p.statut === 'Valid\\u00e9' ? ' <a href=\"https://' + baseUrl + '/webhook/bon-production?bon_id=' + encodeURIComponent(p.id) + '&token=' + token + '\" class=\"act-btn\" target=\"_blank\" title=\"Bon production\">\\u{1F5A8}</a>' : '';\n\n    // Score badge\n    let scoreTd = '';\n    if (p.score !== '' && p.score !== undefined) {\n      const sc = Number(p.score);\n      const scCol = sc >= 80 ? '#059669' : (sc >= 50 ? '#d97706' : '#dc2626');\n      scoreTd = '<span class=\"score\" style=\"color:' + scCol + '\">' + sc + '%</span>';\n    }\n\n    // Dims compact\n    let dims = '';\n    const parts = [];\n    if (p.largeur) parts.push(p.largeur);\n    if (p.hauteur) parts.push(p.hauteur);\n    if (p.avancee) parts.push(p.avancee);\n    dims = parts.join(' \\u00d7 ');\n\n    rowsHtml += '<tr data-statut=\"' + p.statut + '\" data-search=\"' + (p.id + ' ' + p.designation + ' ' + p.client + ' ' + p.facture + ' ' + p.categorie).toLowerCase() + '\">';\n    rowsHtml += '<td><a href=\"' + url + '\">' + fmtIso(p.id) + '</a></td>';\n    rowsHtml += '<td class=\"td-desig\">' + fmtIso(desig) + '</td>';\n    rowsHtml += '<td>' + p.categorie + '</td>';\n    rowsHtml += '<td>' + p.client + '</td>';\n    rowsHtml += '<td>' + p.facture + '</td>';\n    rowsHtml += '<td class=\"td-dim\">' + dims + '</td>';\n    rowsHtml += '<td class=\"hide-md\">' + (p.couleur_toile || '-') + '</td>';\n    rowsHtml += '<td class=\"td-prix\">' + p.prix + ' \\u20ac</td>';\n    rowsHtml += '<td>' + scoreTd + '</td>';\n    rowsHtml += '<td><span class=\"st-badge ' + stCls + '\">' + stText + '</span></td>';\n    rowsHtml += '<td class=\"td-acts\"><a href=\"' + url + '\" class=\"act-btn\">Voir</a>' + printBtn + '</td>';\n    if (p.remarque) rowsHtml += '<!-- rem:' + p.remarque.substring(0, 50).replace(/--/g, '') + ' -->';\n    rowsHtml += '</tr>';\n  });\n}\n\nconst html = `<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>Validation - MON USINE</title>\n<style>\n.main-nav{position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:12px;background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 18px;box-shadow:0 1px 3px rgba(0,0,0,0.06);font-size:0.85rem;flex-wrap:wrap}\n.nav-brand{color:#2563eb;font-weight:800;font-size:1rem;text-decoration:none;white-space:nowrap}\n.nav-links{display:flex;gap:4px;flex:1;overflow-x:auto;scrollbar-width:none}\n.nav-links::-webkit-scrollbar{display:none}\n.nav-link{color:#6b7280;text-decoration:none;padding:6px 10px;border-radius:8px;white-space:nowrap;transition:all 0.2s}\n.nav-link:hover{background:#eff6ff;color:#2563eb}\n.nav-link.active{background:#eff6ff;color:#2563eb;font-weight:600}\n.nav-user{display:flex;align-items:center;gap:8px;margin-left:auto;white-space:nowrap}\n.nav-uname{color:#2563eb;font-weight:600}\n.nav-urole{color:#6b7280;font-size:0.75rem}\n.nav-logout{color:#dc2626;text-decoration:none;font-size:0.8rem;padding:4px 8px;border:1px solid #fecaca;border-radius:6px}\n.nav-logout:hover{background:#fef2f2}\n\n*{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:'Segoe UI',-apple-system,sans-serif;background:#f0f2f5;color:#111827;min-height:100vh;display:flex;flex-direction:column}\n\n/* === TOP BAR === */\n.top-bar{display:flex;align-items:center;gap:14px;padding:10px 24px;background:#fff;border-bottom:1px solid #e5e7eb;flex-wrap:wrap}\n.top-bar h1{font-size:1.15rem;font-weight:700;white-space:nowrap}\n.kpi-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:8px;font-size:0.78rem;font-weight:700;border:1px solid}\n.kpi-pill.wait{background:#fffbeb;border-color:#fde68a;color:#d97706}\n.kpi-pill.ok{background:#ecfdf5;border-color:#a7f3d0;color:#059669}\n.kpi-pill.rej{background:#fef2f2;border-color:#fecaca;color:#dc2626}\n.kpi-pill.all{background:#eff6ff;border-color:#bfdbfe;color:#2563eb}\n.top-bar .spacer{flex:1}\n\n/* === TOOLBAR === */\n.toolbar{display:flex;align-items:center;gap:8px;padding:8px 24px;background:#fff;border-bottom:1px solid #e5e7eb}\n.tab{padding:6px 14px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;font-size:0.8rem;font-weight:600;cursor:pointer;color:#6b7280;transition:all 0.15s;white-space:nowrap}\n.tab:hover{background:#f9fafb;border-color:#2563eb;color:#2563eb}\n.tab.active{background:#eff6ff;border-color:#2563eb;color:#2563eb}\n.tab .cnt{font-size:0.7rem;opacity:0.8;margin-left:2px}\n.search-box{margin-left:auto;position:relative}\n.search-box input{padding:6px 12px 6px 32px;border:1px solid #e5e7eb;border-radius:8px;font-size:0.82rem;width:220px;outline:none;transition:border-color 0.15s}\n.search-box input:focus{border-color:#2563eb}\n.search-box::before{content:'\\u{1F50D}';position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:0.8rem;pointer-events:none}\n\n/* === TABLE === */\n.table-wrap{flex:1;overflow:auto;padding:0}\ntable{width:100%;border-collapse:collapse;font-size:0.82rem}\nth{font-size:0.68rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;text-align:left;border-bottom:1px solid #e5e7eb;background:#f9fafb;position:sticky;top:0;z-index:2;white-space:nowrap}\ntd{padding:7px 10px;border-bottom:1px solid #f3f4f6;white-space:nowrap}\n.td-desig{white-space:normal;min-width:140px;max-width:220px}\n.td-dim{font-family:monospace;font-size:0.8rem;color:#374151}\n.td-prix{font-weight:700;text-align:right}\n.td-acts{white-space:nowrap}\ntr:hover{background:#f0f7ff}\ntr.hidden{display:none}\na{color:#2563eb;text-decoration:none}\na:hover{text-decoration:underline}\n\n/* === BADGES === */\n.st-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:0.72rem;font-weight:600;white-space:nowrap}\n.st-ok{background:#ecfdf5;color:#059669}\n.st-wait{background:#fffbeb;color:#d97706}\n.st-rej{background:#fef2f2;color:#dc2626}\n.score{font-weight:800;font-size:0.8rem}\n\n/* === ACTION BUTTONS === */\n.act-btn{display:inline-block;padding:3px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:0.75rem;color:#2563eb;font-weight:600;transition:all 0.15s;text-decoration:none;margin-right:4px}\n.act-btn:hover{background:#dbeafe;border-color:#2563eb;text-decoration:none}\n\n.empty{color:#9ca3af;text-align:center;padding:40px;font-size:0.95rem}\n\n/* === RESPONSIVE === */\n@media(max-width:1024px){\n  .hide-lg{display:none}\n}\n@media(max-width:768px){\n  .top-bar{padding:8px 14px;gap:8px}\n  .toolbar{padding:6px 14px;gap:6px}\n  .search-box input{width:160px}\n  .hide-md{display:none}\n  td,th{padding:6px 6px}\n  .nav-user .nav-urole{display:none}\n}\n@media(max-width:480px){\n  .main-nav{padding:8px 12px;gap:8px;font-size:0.8rem}\n  .nav-brand{font-size:0.9rem}\n  .nav-link{padding:4px 7px;font-size:0.75rem}\n  .nav-uname{display:none}\n  table{font-size:0.75rem}\n  .search-box input{width:120px}\n  .kpi-pill{font-size:0.7rem;padding:3px 8px}\n}\n</style>\n</head>\n<body>\n${buildNav(userName, userRole, token, baseUrl, 'validation')}\n\n<div class=\"top-bar\">\n  <h1>Validation des Commandes</h1>\n  <span class=\"kpi-pill wait\">\\u23f3 ${pendingCount} en attente</span>\n  <span class=\"kpi-pill ok\">\\u2713 ${validatedCount} valid\\u00e9e${validatedCount > 1 ? 's' : ''}</span>\n  ${rejectedCount > 0 ? '<span class=\"kpi-pill rej\">\\u2717 ' + rejectedCount + ' rejet\\u00e9e' + (rejectedCount > 1 ? 's' : '') + '</span>' : ''}\n  <span class=\"kpi-pill all\">${count} total</span>\n  <span class=\"spacer\"></span>\n</div>\n\n<div class=\"toolbar\">\n  <button class=\"tab active\" onclick=\"filterStatus('all')\" data-filter=\"all\">Toutes <span class=\"cnt\">(${count})</span></button>\n  <button class=\"tab\" onclick=\"filterStatus('En attente')\" data-filter=\"En attente\">\\u23f3 En attente <span class=\"cnt\">(${pendingCount})</span></button>\n  <button class=\"tab\" onclick=\"filterStatus('Valid\\u00e9')\" data-filter=\"Valid\\u00e9\">\\u2713 Valid\\u00e9es <span class=\"cnt\">(${validatedCount})</span></button>\n  ${rejectedCount > 0 ? '<button class=\"tab\" onclick=\"filterStatus(\\'Rejet\\u00e9\\')\" data-filter=\"Rejet\\u00e9\">\\u2717 Rejet\\u00e9es <span class=\"cnt\">(' + rejectedCount + ')</span></button>' : ''}\n  <div class=\"search-box\"><input type=\"text\" id=\"searchInput\" placeholder=\"Rechercher...\" oninput=\"doSearch()\"></div>\n</div>\n\n<div class=\"table-wrap\">\n  <table>\n    <thead>\n      <tr>\n        <th>Bon ID</th>\n        <th>D\\u00e9signation</th>\n        <th>Cat\\u00e9gorie</th>\n        <th>Client</th>\n        <th>Facture</th>\n        <th>Dimensions</th>\n        <th class=\"hide-md\">Toile</th>\n        <th>Prix TTC</th>\n        <th>IA</th>\n        <th>Statut</th>\n        <th></th>\n      </tr>\n    </thead>\n    <tbody id=\"tableBody\">\n      ${rowsHtml}\n    </tbody>\n  </table>\n</div>\n\n<script>\nvar currentFilter = 'all';\nvar currentSearch = '';\n\nfunction filterStatus(status) {\n  currentFilter = status;\n  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.filter === status));\n  applyFilters();\n}\n\nfunction doSearch() {\n  currentSearch = document.getElementById('searchInput').value.toLowerCase().trim();\n  applyFilters();\n}\n\nfunction applyFilters() {\n  var rows = document.querySelectorAll('#tableBody tr');\n  rows.forEach(function(row) {\n    var matchStatus = currentFilter === 'all' || row.dataset.statut === currentFilter;\n    var matchSearch = !currentSearch || (row.dataset.search && row.dataset.search.indexOf(currentSearch) >= 0);\n    row.classList.toggle('hidden', !(matchStatus && matchSearch));\n  });\n}\n</script>\n</body>\n</html>`;\n\nreturn [{json: {html}}];"
+      },
+      "id": "e8cfa662-d4f9-479d-a756-122da32cb8cb",
+      "name": "Generate List HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const products = $input.all();\nconst ids = new Set();\nfor (const item of products) {\n  const f = item.json.fields || item.json;\n  (f.Factures || []).forEach(id => { if (id && typeof id === 'string') ids.add(id); });\n}\nconst arr = [...ids];\nif (arr.length === 0) return [{ json: { formula: '1=0' } }];\nreturn [{ json: { formula: 'OR(' + arr.map(id => \"RECORD_ID()='\" + id + \"'\").join(',') + ')' } }];"
+      },
+      "id": "91ba9dbb-fa82-4a90-971b-cce70848521e",
+      "name": "Build List Factures Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM factures WHERE id = ANY(ARRAY['{{ $json.factureIds ? $json.factureIds.join(\"','\") : \"\" }}']::text[])",
+        "options": {}
+      },
+      "id": "1fa3478d-afcf-466a-afc7-4069281139a0",
+      "name": "Fetch List Factures",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        448,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const factures = $input.all();\nconst ids = new Set();\nfor (const item of factures) {\n  const f = item.json.fields || item.json;\n  (f.Clients || []).forEach(id => { if (id && typeof id === 'string') ids.add(id); });\n}\nconst arr = [...ids];\nif (arr.length === 0) return [{ json: { formula: '1=0' } }];\nreturn [{ json: { formula: 'OR(' + arr.map(id => \"RECORD_ID()='\" + id + \"'\").join(',') + ')' } }];"
+      },
+      "id": "3ce39c54-a9b0-448f-a880-c50308598cee",
+      "name": "Build List Clients Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM clients WHERE id = ANY(ARRAY['{{ $json.clientIds ? $json.clientIds.join(\"','\") : \"\" }}']::text[])",
+        "options": {}
+      },
+      "id": "59712975-6b16-4673-b9ee-9a29aeb5a51f",
+      "name": "Fetch List Clients",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        896,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const factureMap = {};\nfor (const item of $('Fetch List Factures').all()) {\n  const f = item.json.fields || item.json;\n  if (item.json.id) factureMap[item.json.id] = { numero: f['Numéro'] || f['Numéro facture'] || 'N/A', clients: f.Clients || [] };\n}\nconst clientMap = {};\nfor (const item of $('Fetch List Clients').all()) {\n  const f = item.json.fields || item.json;\n  if (item.json.id) clientMap[item.json.id] = f.Nom || 'N/A';\n}\nreturn $('Search All Orders').all().map(item => {\n  const f = item.json.fields || item.json;\n  const fId = (f.Factures || [])[0];\n  const fac = fId ? factureMap[fId] : null;\n  const cId = fac ? (fac.clients[0] || null) : null;\n  return { json: { ...item.json, _client_nom: cId ? (clientMap[cId] || 'N/A') : 'N/A', _facture_num: fac ? fac.numero : 'N/A' } };\n});"
+      },
+      "id": "a979c1b0-22fe-4467-b5b4-e1981f0c9c68",
+      "name": "Enrich List Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT f.* FROM factures f WHERE f.id = '{{ $('Search Product').first().json.facture_record_id || \"\" }}'",
+        "options": {}
+      },
+      "id": "2c8b153a-bdb1-4c25-882e-f88803033dbe",
+      "name": "Get Invoice",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -448,
+        432
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM clients WHERE id = '{{ $('Get Invoice').first().json.client_id }}'",
+        "options": {}
+      },
+      "id": "d0277336-c32b-4cd1-90da-37338631bd29",
+      "name": "Get Client",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -224,
+        432
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.* FROM produits p WHERE p.facture_id = '{{ $('Search Product').first().json.facture_record_id }}' AND p.id != '{{ $('Search Product').first().json.id }}'",
+        "options": {}
+      },
+      "id": "371adab8-8d50-4e60-bec1-f37520b2e026",
+      "name": "Fetch Sibling Products",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -448,
+        624
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-email-product",
+              "leftValue": "={{ $json.is_email_product }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "191ff28b-a478-490c-a3a8-bc0d76ba5ed7",
+      "name": "Is Email Product?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        768,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "8471849130",
+        "text": "=🏭 *COMMANDE VALIDÉE*\n\n📋 Bon : `{{ $json.bon_id }}`\n🏷 Catégorie : {{ $json.categorie }}\n📐 {{ $json.product_info?.designation || '' }}\n📏 {{ $json.product_info?.largeur || '' }} × {{ $json.product_info?.hauteur || '' }} mm\n👤 {{ $json.product_info?.client || '' }}\n🧾 Facture : {{ $json.product_info?.facture || '' }}\n✅ Statut : en attente de production",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "715b1f4a-450a-4a68-9c6a-7ba3b314647c",
+      "name": "Telegram Validation",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1136,
+        944
+      ],
+      "webhookId": "570826c1-e18b-44d6-a6eb-3c5cb0463b89",
+      "credentials": {
+        "telegramApi": {
+          "id": "5IqF446S7446SmUc",
+          "name": "agent"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-edit-action",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "update",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3a7d59fe-754b-488c-bc80-ebe0c33680be",
+      "name": "Is Edit Action?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        448,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst flat = { id: data.record_id };\nObject.entries(data.update_data).forEach(([k, v]) => {\n  if (v !== undefined && v !== null) flat[k] = v;\n});\nreturn [{ json: flat }];"
+      },
+      "id": "94adc4b8-3ec4-46b0-859e-409481dd711b",
+      "name": "Prepare Field Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE produits SET statut_validation = '{{ $json.statut_validation || \"\" }}', statut_production = '{{ $json.statut_production || \"\" }}', notes = '{{ $json.notes || \"\" }}', updated_at = NOW() WHERE id = '{{ $json.id }}' RETURNING *",
+        "options": {}
+      },
+      "id": "31a668a5-fe2e-4ed8-ac82-289bba450040",
+      "name": "Update Product Fields",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1120,
+        192
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Validation": {
+      "main": [
+        [
+          {
+            "node": "Parse Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Parameters": {
+      "main": [
+        [
+          {
+            "node": "Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Search User By Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Login Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Login Redirect": {
+      "main": [
+        [
+          {
+            "node": "Redirect To Login",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search User By Token": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Check Role Permission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Login Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Role Permission": {
+      "main": [
+        [
+          {
+            "node": "Has Access?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Access?": {
+      "main": [
+        [
+          {
+            "node": "Has Bon ID?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Access Denied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Bon ID?": {
+      "main": [
+        [
+          {
+            "node": "Search Product",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Search All Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search All Orders": {
+      "main": [
+        [
+          {
+            "node": "Build List Factures Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate List HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Product": {
+      "main": [
+        [
+          {
+            "node": "Get Invoice",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Sibling Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Validation": {
+      "main": [
+        [
+          {
+            "node": "Should Update?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Update?": {
+      "main": [
+        [
+          {
+            "node": "Is Edit Action?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Validation Status": {
+      "main": [
+        [
+          {
+            "node": "Check Volet Pour Stock",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Email Product?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Volet Pour Stock": {
+      "main": [
+        [
+          {
+            "node": "Trigger Stock?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Stock?": {
+      "main": [
+        [
+          {
+            "node": "POST stock-scan decrement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Email Product?": {
+      "main": [
+        [
+          {
+            "node": "Send Product Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Product Email": {
+      "main": [
+        [
+          {
+            "node": "Generate HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build List Factures Query": {
+      "main": [
+        [
+          {
+            "node": "Fetch List Factures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch List Factures": {
+      "main": [
+        [
+          {
+            "node": "Build List Clients Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build List Clients Query": {
+      "main": [
+        [
+          {
+            "node": "Fetch List Clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch List Clients": {
+      "main": [
+        [
+          {
+            "node": "Enrich List Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich List Data": {
+      "main": [
+        [
+          {
+            "node": "Generate List HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Invoice": {
+      "main": [
+        [
+          {
+            "node": "Get Client",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Client": {
+      "main": [
+        [
+          {
+            "node": "Process Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Edit Action?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Field Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Validation Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Field Update": {
+      "main": [
+        [
+          {
+            "node": "Update Product Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Product Fields": {
+      "main": [
+        [
+          {
+            "node": "Generate HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-06 14:30:25.005",
+  "updatedAt": "2026-03-24 18:56:07.682",
+  "description": ""
+}

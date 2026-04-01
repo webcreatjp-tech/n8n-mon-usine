@@ -1,0 +1,600 @@
+{
+  "id": "OdHaBCoVgSRlcWcY",
+  "name": "06-dashboard-stats",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "dashboard",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "bf6708cd-509d-4744-92e0-1eb257f8a6b6",
+      "name": "Webhook Dashboard",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1776,
+        464
+      ],
+      "webhookId": "dashboard-stats"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst token = query.token || '';\n\nreturn [{\n  json: {\n    token\n  }\n}];"
+      },
+      "id": "4237cebb-5195-49d9-aba2-a37c00303e7e",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1568,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-token",
+              "leftValue": "={{ $json.token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b33a674a-03c3-4a06-8540-d9ac9d08e387",
+      "name": "Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1344,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const baseUrl = $('Webhook Dashboard').first().json.headers?.host || 'localhost';\nconst currentUrl = `https://${baseUrl}/webhook/dashboard`;\nconst loginUrl = `https://${baseUrl}/webhook/login?redirect_url=${encodeURIComponent(currentUrl)}`;\n\nreturn [{\n  json: {\n    redirect_url: loginUrl\n  }\n}];"
+      },
+      "id": "a52b8095-bf17-49b6-bb83-951e9a83b487",
+      "name": "Build Login Redirect",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=Redirecting to login...",
+        "options": {
+          "responseCode": 302,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Location",
+                "value": "={{ $json.redirect_url }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "18268ea8-78fc-46ce-ae11-208a1eb4bafd",
+      "name": "Redirect To Login",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -896,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM utilisateurs WHERE token_session = '{{ $('Parse Parameters').first().json.token }}' AND actif = true AND token_expiration > NOW()",
+        "options": {}
+      },
+      "id": "5f02ba22-b5cf-46b9-8815-251bbb6720a9",
+      "name": "Search User By Token",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1120,
+        352
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "user-found",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9953ade1-577b-465b-9d80-ece94d9f987a",
+      "name": "Token Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ALLOWED_ROLES = ['responsable', 'patron', 'webmaster', 'expedition', 'commercial'];\n\nconst user = $input.first().json;\nconst fields = user.fields || user;\nconst params = $('Parse Parameters').first().json;\nconst userRole = fields.role || '';\nconst userName = fields.nom_complet || fields.nom_utilisateur || 'Utilisateur';\nconst hasAccess = ALLOWED_ROLES.includes(userRole);\n\nreturn [{\n  json: {\n    user_id: user.id,\n    nom_complet: userName,\n    role: userRole,\n    token: params.token,\n    has_access: hasAccess\n  }\n}];"
+      },
+      "id": "6fa13a28-56c9-40f7-9bbb-28c6e9ff323a",
+      "name": "Check Role Permission",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-access",
+              "leftValue": "={{ $json.has_access }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "875d1536-5ef5-435e-b641-680e92dd149f",
+      "name": "Has Access?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -464,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Accès refusé</title><style>body{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#111827;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.denied{background:#fef2f2;border:1px solid #fecaca;padding:40px;border-radius:14px;text-align:center;max-width:400px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}h1{color:#dc2626;margin:0 0 15px}p{color:#6b7280;margin:0 0 20px}a{color:#2563eb;text-decoration:none}</style></head><body><div class=\"denied\"><h1>Accès refusé</h1><p>Votre rôle ({{ $json.role }}) ne permet pas d'accéder au dashboard.<br>Rôles autorisés : Responsable, Patron, Webmaster, Exp&eacute;dition, Commercial</p><a href=\"/webhook/login\">Se reconnecter</a></div></body></html>",
+        "options": {
+          "responseCode": 403,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "078d9cef-572d-4817-8cdb-abb5832a938d",
+      "name": "Respond Access Denied",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -240,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.*, f.id as facture_record_id, f.facture_num, f.magasin, f.client_id, f.date_facture FROM produits p LEFT JOIN factures f ON f.id = p.facture_id WHERE p.statut_validation IN ('Validé', 'En attente') ORDER BY p.created_at DESC",
+        "options": {}
+      },
+      "id": "229c84ce-e148-44eb-af90-e2de54e5cb2f",
+      "name": "Get All Products",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -224,
+        176
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().filter(i => i.json.id || i.json.produit_id || (i.json.fields && i.json.fields.Designation));\nconst now = new Date();\n\nconst parEtape = {\n  'Découpe toile': 0, 'Couture': 0, 'Découpe armature': 0,\n  'Assemblage': 0, 'Réglage': 0, 'Emballage': 0,\n  'Expédition': 0, 'Envoyé par email': 0, 'Terminé': 0\n};\n\nlet enCours = 0, termines = 0, enRetard = 0, aExpedier = 0, emailFournisseur = 0;\nconst produitsEnCours = [];\nconst produitsRetard = [];\nconst produitsExpedition = [];\nconst produitsAttente = [];\n\nfor (const item of items) {\n  const f = item.json.fields || item.json;\n  const statutVal = f.statut_validation || 'Validé';\n\n  if (statutVal === 'En attente') {\n    produitsAttente.push({\n      bon_id: f.produit_id || item.json.id,\n      designation: f.Designation || 'N/A',\n      client: f._client_nom || 'N/A'\n    });\n    continue;\n  }\n\n  const etape = f.statut_production || 'Découpe toile';\n  if (parEtape.hasOwnProperty(etape)) parEtape[etape]++;\n\n  if (etape === 'Terminé') {\n    termines++;\n  } else {\n    enCours++;\n    if (etape === 'Envoyé par email') {\n      emailFournisseur++;\n    }\n    if (etape === 'Emballage' || etape === 'Expédition') {\n      aExpedier++;\n      produitsExpedition.push({\n        bon_id: f.produit_id || item.json.id,\n        designation: f.Designation || 'N/A',\n        etape,\n        client: f._client_nom || 'N/A'\n      });\n    }\n    const retard = f['⏱️ En retard ?'] || '';\n    const isRetard = typeof retard === 'string' ? retard.includes('Oui') : false;\n    if (isRetard) {\n      enRetard++;\n      produitsRetard.push({\n        bon_id: f.produit_id || item.json.id,\n        designation: f.Designation || 'N/A',\n        etape,\n        client: f._client_nom || 'N/A'\n      });\n    }\n    produitsEnCours.push({\n      bon_id: f.produit_id || item.json.id,\n      designation: f.Designation || 'N/A',\n      etape,\n      client: f._client_nom || 'N/A'\n    });\n  }\n}\n\nconst totalValides = items.length - produitsAttente.length;\nconst tauxCompletion = totalValides > 0 ? Math.round((termines / totalValides) * 100) : 0;\n\nreturn [{\n  json: {\n    stats: {\n      total_valides: totalValides,\n      en_cours: enCours,\n      termines,\n      en_retard: enRetard,\n      a_expedier: aExpedier,\n      email_fournisseur: emailFournisseur,\n      a_valider: produitsAttente.length,\n      taux_completion: tauxCompletion\n    },\n    par_etape: parEtape,\n    produits_en_cours: produitsEnCours.slice(0, 50),\n    produits_retard: produitsRetard,\n    produits_expedition: produitsExpedition,\n    produits_attente: produitsAttente.slice(0, 30),\n    date: now.toLocaleString('fr-FR')\n  }\n}];"
+      },
+      "id": "8a235f0f-55f1-45dd-88c8-36a89a9bbf4e",
+      "name": "Calculate Statistics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function buildNav(userName, userRole, token, baseUrl, currentPage) {\n  const ADMIN = ['commercial','responsable','patron','webmaster'];\n  const isAdmin = ADMIN.includes(userRole);\n  const roleNames = { decoupe_toile:'D\\u00e9coupe toile', couture:'Couture', decoupe_armature:'D\\u00e9coupe armature', assemblage:'Assemblage', reglage:'R\\u00e9glage', emballage:'Emballage', expedition:'Exp\\u00e9dition', commercial:'Commercial', responsable:'Responsable', patron:'Patron', webmaster:'Webmaster' };\n  const roleDisplay = roleNames[userRole] || userRole;\n  const u = (p) => `https://${baseUrl}/webhook/${p}?token=${token}`;\n  const a = (page) => currentPage === page ? ' active' : '';\n  const links = [];\n  links.push({ label:'Accueil', page:'home', href:u('home') });\n  links.push({ label:'Production', page:'production', href:u('production') });\n  if (isAdmin) links.push({ label:'Validation', page:'validation', href:u('validation') });\n  if (isAdmin || userRole==='expedition') links.push({ label:'Dashboard', page:'dashboard', href:u('dashboard') });\n  if (['expedition','responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Exp\\u00e9dition', page:'expedition', href:u('expedition') });\n  if (isAdmin) links.push({ label:'Import', page:'upload', href:u('upload') });\n  if (['responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Compta', page:'comptabilite', href:u('comptabilite') });\n  if (userRole==='webmaster') links.push({ label:'Utilisateurs', page:'users', href:u('users') });\n  const linksHtml = links.map(l => `<a href=\"${l.href}\" class=\"nav-link${a(l.page)}\">${l.label}</a>`).join('');\n  return `<nav class=\"main-nav\">\n    <a class=\"nav-brand\" href=\"${u('home')}\">MON USINE</a>\n    <div class=\"nav-links\">${linksHtml}</div>\n    <div class=\"nav-user\">\n      <span class=\"nav-uname\">${userName}</span>\n      <span class=\"nav-urole\">${roleDisplay}</span>\n      <a class=\"nav-logout\" href=\"https://${baseUrl}/webhook/login\">D\\u00e9connexion</a>\n    </div>\n  </nav>`;\n}\n\nconst data = $input.first().json;\nconst stats = data.stats;\nconst parEtape = data.par_etape;\nconst produitsEnCours = data.produits_en_cours;\nconst produitsRetard = data.produits_retard;\nconst produitsExpedition = data.produits_expedition;\nconst produitsAttente = data.produits_attente;\nconst baseUrl = $('Webhook Dashboard').first().json.headers?.host || 'localhost';\n\nconst authInfo = $('Check Role Permission').first().json;\nconst token = authInfo.token;\nconst userName = authInfo.nom_complet;\nconst userRole = authInfo.role;\nconst extractUrl = `https://${baseUrl}/webhook/trigger-extraction`;\n\nconst canSeeValidation = ['commercial','responsable','patron','webmaster'].includes(userRole);\nconst canSeeExpedition = ['expedition','responsable','patron','webmaster'].includes(userRole);\n\n// Pipeline bars\nconst etapeColors = {\n  'D\\u00e9coupe toile':'#dc2626','Couture':'#ea580c','D\\u00e9coupe armature':'#d97706',\n  'Assemblage':'#059669','R\\u00e9glage':'#2563eb','Emballage':'#7c3aed',\n  'Exp\\u00e9dition':'#14b8a6','Envoy\\u00e9 par email':'#f59e0b','Termin\\u00e9':'#059669'\n};\nconst maxEtape = Math.max(...Object.values(parEtape), 1);\nlet pipeHtml = '';\nfor (const [etape, count] of Object.entries(parEtape)) {\n  if (etape === 'Termin\\u00e9') continue;\n  const pct = Math.round((count / maxEtape) * 100);\n  const color = etapeColors[etape] || '#6b7280';\n  pipeHtml += `<div class=\"ep\"><div class=\"ep-n\">${etape}</div><div class=\"ep-b\"><div class=\"ep-f\" style=\"width:${pct}%;background:${color}\"></div></div><div class=\"ep-c\" style=\"color:${color}\">${count}</div></div>`;\n}\n\n// Table builder\nfunction makeTable(items, cols, linkBase) {\n  if (!items || items.length === 0) return '<div class=\"empty\">Aucun \\u00e9l\\u00e9ment</div>';\n  let h = '<table><thead><tr>';\n  cols.forEach(c => h += '<th>' + c.label + '</th>');\n  h += '</tr></thead><tbody>';\n  items.forEach(item => {\n    const isLate = produitsRetard.some(r => r.bon_id === item.bon_id);\n    h += '<tr' + (isLate ? ' class=\"retard\"' : '') + '>';\n    cols.forEach(c => {\n      let v = item[c.key] || '';\n      if (c.link && v && linkBase) v = '<a href=\"' + linkBase + encodeURIComponent(v) + '&token=' + token + '\">' + v + '</a>';\n      if (c.key === 'designation' && v.length > 35) v = v.substring(0, 35) + '...';\n      h += '<td>' + v + '</td>';\n    });\n    h += '</tr>';\n  });\n  h += '</tbody></table>';\n  return h;\n}\n\nconst prodLink = `https://${baseUrl}/webhook/production?bon_id=`;\nconst valLink = `https://${baseUrl}/webhook/validation?bon_id=`;\nconst colsProd = [{key:'bon_id',label:'Bon ID',link:true},{key:'designation',label:'D\\u00e9signation'},{key:'client',label:'Client'},{key:'etape',label:'\\u00c9tape'}];\nconst colsAttente = [{key:'bon_id',label:'Bon ID',link:true},{key:'designation',label:'D\\u00e9signation'},{key:'client',label:'Client'}];\n\n// Build tabs + tab content\nconst tabs = [];\nconst tabContents = [];\n\nif (produitsRetard.length > 0) {\n  tabs.push({id:'retard', label:'\\u26a0 Retard', count:produitsRetard.length, color:'#dc2626'});\n  tabContents.push({id:'retard', html:makeTable(produitsRetard, colsProd, prodLink)});\n}\nif (canSeeValidation && produitsAttente.length > 0) {\n  tabs.push({id:'attente', label:'\\u00c0 valider', count:stats.a_valider, color:'#7c3aed'});\n  tabContents.push({id:'attente', html:makeTable(produitsAttente, colsAttente, valLink)});\n}\nif (canSeeExpedition && produitsExpedition.length > 0) {\n  tabs.push({id:'expe', label:'Exp\\u00e9dition', count:stats.a_expedier, color:'#14b8a6'});\n  tabContents.push({id:'expe', html:makeTable(produitsExpedition, colsProd, prodLink)});\n}\ntabs.push({id:'encours', label:'En production', count:stats.en_cours, color:'#2563eb'});\ntabContents.push({id:'encours', html:makeTable(produitsEnCours, colsProd, prodLink)});\n\nlet tabsHtml = tabs.map((t, i) => `<button class=\"tab${i === 0 ? ' active' : ''}\" onclick=\"switchTab('${t.id}')\" data-tab=\"${t.id}\">${t.label} <span class=\"tab-count\" style=\"background:${t.color}15;color:${t.color}\">${t.count}</span></button>`).join('');\n\nlet tabPanelsHtml = tabContents.map((tc, i) => `<div class=\"tab-panel${i === 0 ? ' active' : ''}\" id=\"panel-${tc.id}\">${tc.html}</div>`).join('');\n\n// KPIs\nlet kpiHtml = '';\nfunction kpi(val, label, color, cls) {\n  return '<div class=\"kpi' + (cls ? ' ' + cls : '') + '\"><div class=\"kv\" style=\"color:' + color + '\">' + val + '</div><div class=\"kl\">' + label + '</div></div>';\n}\nkpiHtml += kpi(stats.total_valides, 'Valid\\u00e9s', '#2563eb', 'info');\nkpiHtml += kpi(stats.en_cours, 'Production', '#d97706', '');\nkpiHtml += kpi(stats.termines, 'Termin\\u00e9s', '#059669', 'success');\nkpiHtml += kpi(stats.en_retard, 'Retard', stats.en_retard > 0 ? '#dc2626' : '#9ca3af', stats.en_retard > 0 ? 'warning' : '');\nif (canSeeValidation) kpiHtml += kpi(stats.a_valider, '\\u00c0 valider', '#7c3aed', 'accent');\nif (canSeeExpedition) kpiHtml += kpi(stats.a_expedier, 'Exp\\u00e9dier', '#14b8a6', '');\nkpiHtml += kpi(stats.taux_completion + '%', 'Compl\\u00e9tion', '#059669', '');\n\nconst html = `<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<meta http-equiv=\"refresh\" content=\"60\">\n<title>Dashboard - MON USINE</title>\n<style>\n.main-nav{position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:12px;background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 18px;box-shadow:0 1px 3px rgba(0,0,0,0.06);font-size:0.85rem;flex-wrap:wrap}\n.nav-brand{color:#2563eb;font-weight:800;font-size:1rem;text-decoration:none;white-space:nowrap}\n.nav-links{display:flex;gap:4px;flex:1;overflow-x:auto;scrollbar-width:none}\n.nav-links::-webkit-scrollbar{display:none}\n.nav-link{color:#6b7280;text-decoration:none;padding:6px 10px;border-radius:8px;white-space:nowrap;transition:all 0.2s}\n.nav-link:hover{background:#eff6ff;color:#2563eb}\n.nav-link.active{background:#eff6ff;color:#2563eb;font-weight:600}\n.nav-user{display:flex;align-items:center;gap:8px;margin-left:auto;white-space:nowrap}\n.nav-uname{color:#2563eb;font-weight:600}\n.nav-urole{color:#6b7280;font-size:0.75rem}\n.nav-logout{color:#dc2626;text-decoration:none;font-size:0.8rem;padding:4px 8px;border:1px solid #fecaca;border-radius:6px}\n.nav-logout:hover{background:#fef2f2}\n\n*{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:'Segoe UI',-apple-system,sans-serif;background:#f0f2f5;color:#111827;min-height:100vh}\n\n/* === TOP BAR === */\n.top-bar{display:flex;align-items:center;gap:16px;padding:12px 24px;background:#fff;border-bottom:1px solid #e5e7eb;flex-wrap:wrap}\n.top-bar h1{font-size:1.15rem;font-weight:700}\n.top-bar .date{font-size:0.78rem;color:#9ca3af}\n.top-bar .spacer{flex:1}\n.extract-btn{display:inline-flex;align-items:center;gap:8px;padding:8px 18px;background:#2563eb;border:none;border-radius:8px;color:#fff;font-size:0.85rem;font-weight:600;cursor:pointer;transition:all 0.15s;white-space:nowrap}\n.extract-btn:hover{background:#1d4ed8;transform:translateY(-1px)}\n.extract-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}\n.extract-btn .spin{display:none;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite}\n.extract-btn.loading .spin{display:inline-block}\n.extract-btn.loading .btn-text{display:none}\n.extract-btn.done{background:#059669}\n@keyframes spin{to{transform:rotate(360deg)}}\n\n/* === KPI STRIP === */\n.kpi-strip{display:flex;gap:10px;padding:12px 24px;background:#fff;border-bottom:1px solid #e5e7eb;overflow-x:auto;scrollbar-width:none}\n.kpi-strip::-webkit-scrollbar{display:none}\n.kpi{display:flex;flex-direction:column;align-items:center;padding:10px 18px;border:1px solid #e5e7eb;border-radius:10px;min-width:100px;transition:all 0.15s}\n.kpi:hover{border-color:#2563eb;transform:translateY(-1px)}\n.kv{font-size:1.6rem;font-weight:800;line-height:1.1}\n.kl{font-size:0.62rem;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;white-space:nowrap}\n.kpi.warning{border-color:#fecaca;background:#fef2f2}\n.kpi.success{border-color:#a7f3d0;background:#ecfdf5}\n.kpi.info{border-color:#bfdbfe;background:#eff6ff}\n.kpi.accent{border-color:#c4b5fd;background:#f5f3ff}\n\n/* === MAIN LAYOUT === */\n.layout{display:grid;grid-template-columns:360px 1fr;gap:0;height:calc(100vh - 155px)}\n.panel-left{background:#fff;border-right:1px solid #e5e7eb;padding:16px 20px;overflow-y:auto}\n.panel-right{display:flex;flex-direction:column;overflow:hidden}\n\n/* === PIPELINE === */\n.sec-title{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#9ca3af;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f3f4f6}\n.ep{display:flex;align-items:center;gap:8px;margin-bottom:6px}\n.ep-n{width:120px;font-size:0.78rem;color:#6b7280;text-align:right;white-space:nowrap}\n.ep-b{flex:1;height:22px;background:#f3f4f6;border-radius:11px;overflow:hidden}\n.ep-f{height:100%;border-radius:11px;transition:width 0.5s}\n.ep-c{width:30px;font-weight:800;font-size:1rem;text-align:right}\n\n/* === ALERTS === */\n.alert-box{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px;margin-top:14px}\n.alert-box .alert-title{font-size:0.82rem;font-weight:700;color:#dc2626;margin-bottom:6px}\n.alert-item{display:flex;justify-content:space-between;font-size:0.82rem;padding:4px 0;border-bottom:1px dotted #fecaca}\n.alert-item:last-child{border:none}\n.alert-item a{color:#dc2626;font-weight:600}\n.alert-item .ai-etape{color:#6b7280;font-size:0.75rem}\n\n/* === TABS === */\n.tabs-bar{display:flex;gap:4px;padding:10px 20px;background:#fff;border-bottom:1px solid #e5e7eb;overflow-x:auto;scrollbar-width:none}\n.tabs-bar::-webkit-scrollbar{display:none}\n.tab{padding:7px 16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;font-size:0.82rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:all 0.15s;color:#6b7280}\n.tab:hover{background:#f9fafb;border-color:#2563eb;color:#2563eb}\n.tab.active{background:#eff6ff;border-color:#2563eb;color:#2563eb}\n.tab-count{font-size:0.7rem;padding:2px 8px;border-radius:10px;font-weight:700}\n\n/* === TABLE PANEL === */\n.tab-panels{flex:1;overflow-y:auto;padding:0 20px 16px}\n.tab-panel{display:none}\n.tab-panel.active{display:block}\ntable{width:100%;border-collapse:collapse;margin-top:8px}\nth{font-size:0.68rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;text-align:left;border-bottom:1px solid #e5e7eb;background:#f9fafb;position:sticky;top:0;z-index:1}\ntd{padding:8px 10px;font-size:0.85rem;border-bottom:1px solid #f3f4f6}\ntr:hover{background:#f9fafb}\ntr.retard{background:#fef2f2}\ntr.retard:hover{background:#fee2e2}\na{color:#2563eb;text-decoration:none}\na:hover{text-decoration:underline}\n.empty{color:#9ca3af;text-align:center;padding:30px;font-size:0.9rem}\n\n/* === RESPONSIVE === */\n@media(max-width:1024px){\n  .layout{grid-template-columns:1fr;height:auto}\n  .panel-left{border-right:none;border-bottom:1px solid #e5e7eb}\n  .panel-right{min-height:400px}\n}\n@media(max-width:768px){\n  .top-bar{padding:10px 14px;gap:10px}\n  .kpi-strip{padding:10px 14px;gap:8px}\n  .kpi{padding:8px 12px;min-width:80px}\n  .kv{font-size:1.3rem}\n  .ep-n{width:90px;font-size:0.72rem}\n  .nav-user .nav-urole{display:none}\n}\n@media(max-width:480px){\n  .main-nav{padding:8px 12px;gap:8px;font-size:0.8rem}\n  .nav-brand{font-size:0.9rem}\n  .nav-link{padding:4px 7px;font-size:0.75rem}\n  .nav-uname{display:none}\n  .kpi{min-width:70px;padding:6px 10px}\n  .kv{font-size:1.1rem}\n}\n</style>\n</head>\n<body>\n${buildNav(userName, userRole, token, baseUrl, 'dashboard')}\n\n<div class=\"top-bar\">\n  <h1>Dashboard Production</h1>\n  <span class=\"date\">${data.date} \\u00b7 Auto 60s</span>\n  <span class=\"spacer\"></span>\n  <button class=\"extract-btn\" id=\"extBtn\" onclick=\"triggerExtract()\"><span class=\"spin\"></span><span class=\"btn-text\">\\u26a1 Extraction</span></button>\n</div>\n\n<div class=\"kpi-strip\">${kpiHtml}</div>\n\n<div class=\"layout\">\n  <div class=\"panel-left\">\n    <div class=\"sec-title\">Pipeline</div>\n    ${pipeHtml}\n\n    ${produitsRetard.length > 0 ? '<div class=\"alert-box\"><div class=\"alert-title\">\\u26a0 ' + produitsRetard.length + ' produit' + (produitsRetard.length > 1 ? 's' : '') + ' en retard</div>' + produitsRetard.slice(0, 8).map(r => '<div class=\"alert-item\"><a href=\"' + prodLink + encodeURIComponent(r.bon_id) + '&token=' + token + '\">' + (r.designation.length > 25 ? r.designation.substring(0,25) + '...' : r.designation) + '</a><span class=\"ai-etape\">' + r.etape + '</span></div>').join('') + (produitsRetard.length > 8 ? '<div class=\"alert-item\" style=\"color:#9ca3af;justify-content:center\">+ ' + (produitsRetard.length - 8) + ' autres</div>' : '') + '</div>' : ''}\n  </div>\n\n  <div class=\"panel-right\">\n    <div class=\"tabs-bar\">${tabsHtml}</div>\n    <div class=\"tab-panels\">${tabPanelsHtml}</div>\n  </div>\n</div>\n\n<script>\nfunction switchTab(id) {\n  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === id));\n  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + id));\n}\nfunction triggerExtract(){\n  var btn=document.getElementById('extBtn');\n  btn.classList.add('loading');btn.disabled=true;\n  fetch('${extractUrl}').then(function(){\n    btn.classList.remove('loading');btn.classList.add('done');\n    btn.innerHTML='\\u2705 Lanc\\u00e9e !';\n    setTimeout(function(){btn.classList.remove('done');btn.disabled=false;btn.innerHTML='<span class=\"spin\"></span><span class=\"btn-text\">\\u26a1 Extraction</span>';},4000);\n  }).catch(function(){\n    btn.classList.remove('loading');btn.disabled=false;\n    btn.innerHTML='\\u274c Erreur';\n    setTimeout(function(){btn.innerHTML='<span class=\"spin\"></span><span class=\"btn-text\">\\u26a1 Extraction</span>';},3000);\n  });\n}\n</script>\n</body>\n</html>`;\n\nreturn [{json: {html}}];"
+      },
+      "id": "d7ff5813-7387-4e61-bcab-dfd08b2a7641",
+      "name": "Generate Dashboard HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "627875c2-0702-4fcd-b192-40fc874f8ec9",
+      "name": "Respond Dashboard",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1568,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const products = $input.all();\nconst ids = new Set();\nfor (const item of products) {\n  const f = item.json.fields || item.json;\n  (f.Factures || []).forEach(id => { if (id && typeof id === 'string') ids.add(id); });\n}\nconst arr = [...ids];\nif (arr.length === 0) return [{ json: { formula: '1=0' } }];\nreturn [{ json: { formula: 'OR(' + arr.map(id => \"RECORD_ID()='\" + id + \"'\").join(',') + ')' } }];"
+      },
+      "id": "4f441029-7b08-4d2b-a422-896bd9104581",
+      "name": "Build Factures Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM factures WHERE id = ANY(ARRAY['{{ $json.factureIds ? $json.factureIds.join(\"','\") : \"\" }}']::text[])",
+        "options": {}
+      },
+      "id": "3b3f468f-bc33-4f22-af2b-a5e24a8d1c05",
+      "name": "Fetch Factures",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const factures = $input.all();\nconst ids = new Set();\nfor (const item of factures) {\n  const f = item.json.fields || item.json;\n  (f.Clients || []).forEach(id => { if (id && typeof id === 'string') ids.add(id); });\n}\nconst arr = [...ids];\nif (arr.length === 0) return [{ json: { formula: '1=0' } }];\nreturn [{ json: { formula: 'OR(' + arr.map(id => \"RECORD_ID()='\" + id + \"'\").join(',') + ')' } }];"
+      },
+      "id": "a8305009-17d8-4c69-8797-e4561466e6f2",
+      "name": "Build Clients Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM clients WHERE id = ANY(ARRAY['{{ $json.clientIds ? $json.clientIds.join(\"','\") : \"\" }}']::text[])",
+        "options": {}
+      },
+      "id": "99ea5be5-f464-4479-a2ed-a3e6297c813f",
+      "name": "Fetch Clients",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        672,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const factureMap = {};\nfor (const item of $('Fetch Factures').all()) {\n  const f = item.json.fields || item.json;\n  if (item.json.id) factureMap[item.json.id] = { numero: f['Numéro'] || f['Numéro facture'] || 'N/A', clients: f.Clients || [] };\n}\nconst clientMap = {};\nfor (const item of $('Fetch Clients').all()) {\n  const f = item.json.fields || item.json;\n  if (item.json.id) clientMap[item.json.id] = f.Nom || 'N/A';\n}\nreturn $('Get All Products').all().map(item => {\n  const f = item.json.fields || item.json;\n  const fId = (f.Factures || [])[0];\n  const fac = fId ? factureMap[fId] : null;\n  const cId = fac ? (fac.clients[0] || null) : null;\n  return { json: { ...item.json, _client_nom: cId ? (clientMap[cId] || 'N/A') : 'N/A', _facture_num: fac ? fac.numero : 'N/A' } };\n});"
+      },
+      "id": "2cfb80a8-02a7-412d-ac2a-9ea50002f981",
+      "name": "Enrich Products",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Dashboard": {
+      "main": [
+        [
+          {
+            "node": "Parse Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Parameters": {
+      "main": [
+        [
+          {
+            "node": "Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Search User By Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Login Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Login Redirect": {
+      "main": [
+        [
+          {
+            "node": "Redirect To Login",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search User By Token": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Check Role Permission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Login Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Role Permission": {
+      "main": [
+        [
+          {
+            "node": "Has Access?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Access?": {
+      "main": [
+        [
+          {
+            "node": "Get All Products",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Access Denied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Statistics": {
+      "main": [
+        [
+          {
+            "node": "Generate Dashboard HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Dashboard HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Products": {
+      "main": [
+        [
+          {
+            "node": "Build Factures Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Factures Query": {
+      "main": [
+        [
+          {
+            "node": "Fetch Factures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Factures": {
+      "main": [
+        [
+          {
+            "node": "Build Clients Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Clients Query": {
+      "main": [
+        [
+          {
+            "node": "Fetch Clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Clients": {
+      "main": [
+        [
+          {
+            "node": "Enrich Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Products": {
+      "main": [
+        [
+          {
+            "node": "Calculate Statistics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-06 14:31:34.630",
+  "updatedAt": "2026-03-24 14:04:28.430",
+  "description": ""
+}

@@ -1,0 +1,617 @@
+{
+  "id": "mLOQVRXtTLzvBu0B",
+  "name": "05-expedition-suivi",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "expedition",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "531b5fe2-6536-4f91-97bb-32d6c8bd8603",
+      "name": "Webhook Expedition",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1776,
+        304
+      ],
+      "webhookId": "expedition-suivi"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst bonId = query.bon_id || '';\nconst action = query.action || 'view'; // view, expedier, set_tracking\nconst numeroSuivi = query.numero_suivi || '';\nconst transporteur = query.transporteur || '';\nconst nbColis = parseInt(query.nb_colis) || 1;\nconst token = query.token || '';\n\nreturn [{\n  json: {\n    bon_id: bonId ? decodeURIComponent(bonId) : '',\n    action,\n    numero_suivi: numeroSuivi,\n    transporteur,\n    nb_colis: nbColis,\n    token,\n    error: !bonId,\n    message: !bonId ? 'bon_id manquant' : ''\n  }\n}];"
+      },
+      "id": "9e7eaac8-5000-4c1e-ba0b-ebd3f210aae6",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1552,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-token",
+              "leftValue": "={{ $json.token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0e76bb32-b4d4-4f0f-bb0c-469aae1e4c4c",
+      "name": "Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1344,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const baseUrl = $('Webhook Expedition').first().json.headers?.host || 'localhost';\nconst query = $('Webhook Expedition').first().json.query || {};\nconst bonId = query.bon_id || '';\nconst action = query.action || 'view';\n\nlet currentUrl = `https://${baseUrl}/webhook/expedition`;\nif (bonId) currentUrl += `?bon_id=${encodeURIComponent(bonId)}&action=${action}`;\n\nconst loginUrl = `https://${baseUrl}/webhook/login?redirect_url=${encodeURIComponent(currentUrl)}`;\n\nreturn [{\n  json: {\n    redirect_url: loginUrl\n  }\n}];"
+      },
+      "id": "0c3783b8-4077-45b0-8d57-b065344bfaca",
+      "name": "Build Login Redirect",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=Redirecting to login...",
+        "options": {
+          "responseCode": 302,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Location",
+                "value": "={{ $json.redirect_url }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "68f138b6-d9ca-4983-a61e-249b4e39490f",
+      "name": "Redirect To Login",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -896,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM utilisateurs WHERE token_session = '{{ $('Parse Parameters').first().json.token }}' AND actif = true AND token_expiration > NOW()",
+        "options": {}
+      },
+      "id": "ccafa7f9-c889-4a2f-9701-82c779dc480f",
+      "name": "Search User By Token",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1120,
+        192
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "user-found",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6f088153-c2ba-40df-b706-4d8027c37dc1",
+      "name": "Token Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ALLOWED_ROLES = ['expedition', 'responsable', 'patron', 'webmaster'];\n\nconst user = $input.first().json;\nconst fields = user.fields || user;\nconst params = $('Parse Parameters').first().json;\nconst userRole = fields.role || '';\nconst userName = fields.nom_complet || fields.nom_utilisateur || 'Utilisateur';\nconst hasAccess = ALLOWED_ROLES.includes(userRole);\n\nreturn [{\n  json: {\n    user_id: user.id,\n    nom_complet: userName,\n    role: userRole,\n    token: params.token,\n    has_access: hasAccess,\n    bon_id: params.bon_id,\n    action: params.action,\n    numero_suivi: params.numero_suivi,\n    transporteur: params.transporteur,\n    nb_colis: params.nb_colis,\n    error: params.error,\n    message: params.message || ''\n  }\n}];"
+      },
+      "id": "e2b147bb-6b10-46ee-bc0a-4d5b209774e7",
+      "name": "Check Role Permission",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-access",
+              "leftValue": "={{ $json.has_access }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "16750e08-f7d7-435d-8b94-30ff2d1a6794",
+      "name": "Has Access?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Accès refusé</title><style>body{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#111827;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.denied{background:#fef2f2;border:1px solid #fecaca;padding:40px;border-radius:14px;text-align:center;max-width:400px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}h1{color:#dc2626;margin:0 0 15px}p{color:#6b7280;margin:0 0 20px}a{color:#2563eb;text-decoration:none}</style></head><body><div class=\"denied\"><h1>Accès refusé</h1><p>Votre rôle ({{ $json.role }}) ne permet pas d'accéder à la page d'expédition.<br>Rôles autorisés : Expédition, Responsable, Patron, Webmaster</p><a href=\"/webhook/login\">Se reconnecter</a></div></body></html>",
+        "options": {
+          "responseCode": 403,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "81a55a76-b928-4ef4-9619-4836ecd25385",
+      "name": "Respond Access Denied",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -224,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "28e8a674-4058-4ee3-ae57-5f4b6a717a2e",
+      "name": "Has Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Erreur</title><style>body{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#111827;display:flex;justify-content:center;align-items:center;min-height:100vh}.error{background:#fef2f2;border:1px solid #fecaca;padding:40px;border-radius:14px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.04)}h1{color:#dc2626;margin:0 0 15px}p{color:#6b7280}</style></head><body><div class=\"error\"><h1>Erreur</h1><p>{{ $json.message || 'Paramètre manquant' }}</p></div></body></html>",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "28fc24e0-b22f-4ffe-a1a8-22bdbc1f1399",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.*, f.id as facture_record_id, f.facture_num, f.client_id FROM produits p LEFT JOIN factures f ON f.id = p.facture_id WHERE p.produit_id = '{{ $json.bon_id }}'",
+        "options": {}
+      },
+      "id": "4b76f5fb-61d6-475e-8458-ebf54e4ea06d",
+      "name": "Search Product",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        192
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst params = $('Check Role Permission').first().json;\nconst action = params.action;\nconst bonId = params.bon_id;\nconst token = params.token;\nconst now = new Date().toISOString();\n\nif (!items || items.length === 0 || !items[0].json.id) {\n  return [{\n    json: {\n      success: false,\n      error: true,\n      message: `Produit non trouvé: ${bonId}`,\n      bon_id: bonId,\n      user_name: params.nom_complet,\n      user_role: params.role,\n      user_token: token\n    }\n  }];\n}\n\nconst product = items[0].json;\nconst fields = product.fields || product;\nconst recordId = product.id;\n\nconst productInfo = {\n  designation: fields.Designation || 'N/A',\n  client: fields['Nom (from Client) (from Facture_liee)']?.[0] || 'N/A',\n  facture: fields['Numéro (from Facture_liee)']?.[0] || 'N/A',\n  adresse_livraison: fields['Adresse livraison (from Client) (from Facture_liee)']?.[0] || fields['Adresse livraison'] || 'N/A',\n  telephone: fields['Téléphone (from Client) (from Facture_liee)']?.[0] || 'N/A',\n  email: fields['Email (from Client) (from Facture_liee)']?.[0] || 'N/A',\n  numero_suivi: fields['Numero de suivi'] || '',\n  nb_colis: fields['Nombre de colis'] || 1,\n  statut: fields.statut_production || 'N/A'\n};\n\nlet updateData = {};\nlet message = '';\n\nif (action === 'expedier') {\n  updateData = {\n    statut_production: 'Terminé',\n    date_expe: now,\n    'Numero de suivi': params.numero_suivi || '',\n    'Nombre de colis': params.nb_colis\n  };\n  message = `Produit expédié par ${params.nom_complet} ! ${params.numero_suivi ? 'Suivi: ' + params.numero_suivi : ''}`;\n  \n} else if (action === 'set_tracking') {\n  updateData = {\n    'Numero de suivi': params.numero_suivi,\n    'Nombre de colis': params.nb_colis\n  };\n  message = `Numéro de suivi enregistré: ${params.numero_suivi}`;\n  \n} else {\n  message = `Détails expédition pour ${bonId}`;\n}\n\nreturn [{\n  json: {\n    success: true,\n    error: false,\n    bon_id: bonId,\n    record_id: recordId,\n    action,\n    message,\n    product_info: productInfo,\n    update_data: updateData,\n    should_update: Object.keys(updateData).length > 0,\n    timestamp: now,\n    user_name: params.nom_complet,\n    user_role: params.role,\n    user_token: token\n  }\n}];"
+      },
+      "id": "3e55f2de-75de-4544-9aba-dff3b1f8d6d3",
+      "name": "Process Expedition",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.should_update }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c9198948-f6fe-4b4c-b773-0aaacf71448d",
+      "name": "Should Update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        448,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE produits SET statut_production = '{{ $json.update_data ? $json.update_data.statut_production : ($json.statut_production || \"\") }}', numero_suivi = '{{ $json.update_data ? ($json.update_data[\"Numero de suivi\"] || \"\") : ($json.numero_suivi || \"\") }}', nb_colis = '{{ $json.update_data ? ($json.update_data[\"Nombre de colis\"] || \"\") : ($json.nb_colis || \"\") }}', updated_at = NOW() WHERE id = '{{ $json.record_id }}' RETURNING *",
+        "options": {}
+      },
+      "id": "2f9e6e84-2d26-43ca-8cd5-87aa2ecd1f59",
+      "name": "Update Expedition",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        672,
+        96
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function buildNav(userName, userRole, token, baseUrl, currentPage) {\n  const ADMIN = ['commercial','responsable','patron','webmaster'];\n  const isAdmin = ADMIN.includes(userRole);\n  const roleNames = { decoupe_toile:'Découpe toile', couture:'Couture', decoupe_armature:'Découpe armature', assemblage:'Assemblage', reglage:'Réglage', emballage:'Emballage', expedition:'Expédition', commercial:'Commercial', responsable:'Responsable', patron:'Patron', webmaster:'Webmaster' };\n  const roleDisplay = roleNames[userRole] || userRole;\n  const u = (p) => `https://${baseUrl}/webhook/${p}?token=${token}`;\n  const a = (page) => currentPage === page ? ' active' : '';\n  const links = [];\n  links.push({ label:'Accueil', page:'home', href:u('home') });\n  links.push({ label:'Production', page:'production', href:u('production') });\n  if (isAdmin) links.push({ label:'Validation', page:'validation', href:u('validation') });\n  if (isAdmin || userRole==='expedition') links.push({ label:'Dashboard', page:'dashboard', href:u('dashboard') });\n  if (['expedition','responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Expédition', page:'expedition', href:u('expedition') });\n  if (isAdmin) links.push({ label:'Import', page:'upload', href:u('upload') });\n  if (['responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Compta', page:'comptabilite', href:u('comptabilite') });\n  if (userRole==='webmaster') links.push({ label:'Utilisateurs', page:'users', href:u('users') });\n  const linksHtml = links.map(l => `<a href=\"${l.href}\" class=\"nav-link${a(l.page)}\">${l.label}</a>`).join('');\n  return `<nav class=\"main-nav\">\n    <a class=\"nav-brand\" href=\"${u('home')}\">MON USINE</a>\n    \n    <div class=\"nav-user\">\n      <span class=\"nav-uname\">${userName}</span>\n      <span class=\"nav-urole\">${roleDisplay}</span>\n      <a class=\"nav-logout\" href=\"https://${baseUrl}/webhook/login\">Déconnexion</a>\n    </div>\n  </nav>`;\n}\n\nconst data = $('Process Expedition').first().json;\nconst pi = data.product_info;\nconst bonId = data.bon_id;\nconst token = data.user_token;\nconst userName = data.user_name;\nconst userRole = data.user_role;\nconst baseUrl = $('Webhook Expedition').first().json.headers?.host || 'localhost';\nconst logoutUrl = `https://${baseUrl}/webhook/login`;\nconst dashboardUrl = `https://${baseUrl}/webhook/dashboard?token=${token}`;\n\nconst html = `<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Expédition - ${bonId}</title>\n  <style>\n    .main-nav{position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:12px;background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 18px;margin:-15px -10px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.06);font-size:0.85rem;flex-wrap:wrap}\n.nav-brand{color:#2563eb;font-weight:800;font-size:1rem;text-decoration:none;white-space:nowrap}\n.nav-links::-webkit-scrollbar{display:none}\n.nav-link{color:#6b7280;text-decoration:none;padding:6px 10px;border-radius:8px;white-space:nowrap;transition:all 0.2s}\n.nav-link:hover{background:#eff6ff;color:#2563eb}\n.nav-link.active{background:#eff6ff;color:#2563eb;font-weight:600}\n.nav-user{display:flex;align-items:center;gap:8px;margin-left:auto;white-space:nowrap}\n.nav-uname{color:#2563eb;font-weight:600}\n.nav-urole{color:#6b7280;font-size:0.75rem}\n.nav-logout{color:#dc2626;text-decoration:none;font-size:0.8rem;padding:4px 8px;border:1px solid #fecaca;border-radius:6px}\n.nav-logout:hover{background:#fef2f2}\n@media(max-width:768px){.nav-user .nav-urole{display:none}}\n@media(max-width:480px){.main-nav{padding:8px 12px;gap:8px;font-size:0.8rem}.nav-brand{font-size:0.9rem}.nav-link{padding:4px 7px;font-size:0.75rem}.nav-uname{display:none}.nav-logout{font-size:0.75rem}}\n\n    *{box-sizing:border-box;margin:0;padding:0}\n    body{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;min-height:100vh;padding:15px;color:#111827}\n    .container{max-width:500px;margin:0 auto}\n    .header{text-align:center;padding:20px 0}\n    .header h1{font-size:1.2rem;color:#2563eb}\n    .header .bon-id{font-size:1.4rem;color:#d97706;font-weight:bold;margin-top:5px}\n    .message{background:#2563eb;color:#fff;padding:15px;border-radius:12px;text-align:center;font-weight:600;margin-bottom:20px}\n    .card{background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:20px;margin-bottom:15px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}\n    .card h2{font-size:0.9rem;color:#2563eb;margin-bottom:15px;padding-bottom:8px;border-bottom:2px solid #e5e7eb}\n    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}\n    .item{background:#f9fafb;padding:10px;border-radius:8px;border:1px solid #f3f4f6}\n    .item .label{font-size:0.7rem;color:#6b7280;text-transform:uppercase}\n    .item .value{font-size:0.95rem;font-weight:600;word-break:break-word;color:#111827}\n    .item.full{grid-column:1/-1}\n    .tracking-box{background:#ecfdf5;border:1px solid #a7f3d0;color:#059669;padding:20px;border-radius:12px;text-align:center;margin:15px 0}\n    .tracking-box .label{font-size:0.8rem;margin-bottom:5px}\n    .tracking-box .number{font-size:1.5rem;font-weight:bold;font-family:monospace;color:#111827}\n    form{display:flex;flex-direction:column;gap:10px}\n    input,select{padding:12px;border:1px solid #e5e7eb;border-radius:8px;font-size:1rem;background:#ffffff;color:#111827}\n    input::placeholder{color:#9ca3af}\n    .btn{padding:16px;border:none;border-radius:12px;font-size:1rem;font-weight:bold;cursor:pointer;text-decoration:none;text-align:center;width:100%}\n    .btn-expedier{background:#059669;color:#fff}\n    .footer{text-align:center;padding:20px;color:#9ca3af;font-size:0.75rem}\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    ${buildNav(userName, userRole, token, baseUrl, 'expedition')}\n    \n    <div class=\"header\">\n      <h1>Exp&eacute;dition</h1>\n      <div class=\"bon-id\">${bonId}</div>\n    </div>\n    \n    <div class=\"message\">${data.message}</div>\n    \n    <div class=\"card\">\n      <h2>DESTINATAIRE</h2>\n      <div class=\"grid\">\n        <div class=\"item full\"><div class=\"label\">Client</div><div class=\"value\">${pi.client}</div></div>\n        <div class=\"item full\"><div class=\"label\">Adresse</div><div class=\"value\">${pi.adresse_livraison}</div></div>\n        <div class=\"item\"><div class=\"label\">T&eacute;l&eacute;phone</div><div class=\"value\">${pi.telephone}</div></div>\n        <div class=\"item\"><div class=\"label\">Email</div><div class=\"value\">${pi.email}</div></div>\n      </div>\n    </div>\n    \n    <div class=\"card\">\n      <h2>COLIS</h2>\n      <div class=\"grid\">\n        <div class=\"item full\"><div class=\"label\">Produit</div><div class=\"value\">${pi.designation}</div></div>\n        <div class=\"item\"><div class=\"label\">Facture</div><div class=\"value\">${pi.facture}</div></div>\n        <div class=\"item\"><div class=\"label\">Statut</div><div class=\"value\">${pi.statut}</div></div>\n      </div>\n      \n      ${pi.numero_suivi ? `\n      <div class=\"tracking-box\">\n        <div class=\"label\">Num&eacute;ro de suivi</div>\n        <div class=\"number\">${pi.numero_suivi}</div>\n        <div style=\"margin-top:10px;font-size:0.85rem\">${pi.nb_colis} colis</div>\n      </div>\n      ` : ''}\n    </div>\n    \n    ${pi.statut !== 'Terminé' ? `\n    <div class=\"card\">\n      <h2>EXP&Eacute;DIER</h2>\n      <form action=\"https://${baseUrl}/webhook/expedition\" method=\"GET\">\n        <input type=\"hidden\" name=\"bon_id\" value=\"${bonId}\">\n        <input type=\"hidden\" name=\"action\" value=\"expedier\">\n        <input type=\"hidden\" name=\"token\" value=\"${token}\">\n        <input type=\"text\" name=\"numero_suivi\" placeholder=\"Numéro de suivi\" required>\n        <input type=\"number\" name=\"nb_colis\" placeholder=\"Nombre de colis\" value=\"1\" min=\"1\">\n        <select name=\"transporteur\">\n          <option value=\"\">-- Transporteur --</option>\n          <option value=\"Chronopost\">Chronopost</option>\n          <option value=\"Colissimo\">Colissimo</option>\n          <option value=\"DPD\">DPD</option>\n          <option value=\"GLS\">GLS</option>\n          <option value=\"UPS\">UPS</option>\n          <option value=\"TNT\">TNT</option>\n          <option value=\"Autre\">Autre</option>\n        </select>\n        <button type=\"submit\" class=\"btn btn-expedier\">Marquer comme exp&eacute;di&eacute;</button>\n      </form>\n    </div>\n    ` : ''}\n    \n    <div class=\"footer\">\n      <p>MON USINE - ${new Date().toLocaleString('fr-FR')}</p>\n      <div class=\"nav-links\">\n        <a href=\"${dashboardUrl}\">Dashboard</a>\n        <a href=\"${logoutUrl}\">D&eacute;connexion</a>\n      </div>\n    </div>\n  </div>\n</body>\n</html>`;\n\nreturn [{json: {html}}];"
+      },
+      "id": "d1c3cabe-467c-4645-aff2-8ff0016565fa",
+      "name": "Generate HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "1f0c94fc-7d9a-47d8-9aad-46a75e8b599f",
+      "name": "Respond HTML",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        192
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Expedition": {
+      "main": [
+        [
+          {
+            "node": "Parse Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Parameters": {
+      "main": [
+        [
+          {
+            "node": "Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Search User By Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Login Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Login Redirect": {
+      "main": [
+        [
+          {
+            "node": "Redirect To Login",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search User By Token": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Check Role Permission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Login Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Role Permission": {
+      "main": [
+        [
+          {
+            "node": "Has Access?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Access?": {
+      "main": [
+        [
+          {
+            "node": "Has Error?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Access Denied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Error?": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Search Product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Product": {
+      "main": [
+        [
+          {
+            "node": "Process Expedition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Expedition": {
+      "main": [
+        [
+          {
+            "node": "Should Update?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Update?": {
+      "main": [
+        [
+          {
+            "node": "Update Expedition",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Expedition": {
+      "main": [
+        [
+          {
+            "node": "Generate HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-06 14:31:20.935",
+  "updatedAt": "2026-03-24 14:04:28.394",
+  "description": ""
+}

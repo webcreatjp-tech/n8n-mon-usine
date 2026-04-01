@@ -1,0 +1,339 @@
+{
+  "id": "Yj1IPFmiMiKMf111",
+  "name": "10-portail-home",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "home",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c399f3bf-567e-4d19-b23d-13052a1ff3f7",
+      "name": "Webhook Home",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        112
+      ],
+      "webhookId": "portail-home"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst token = query.token || '';\n\nreturn [{\n  json: {\n    token\n  }\n}];"
+      },
+      "id": "b3955ba7-372e-4747-af7e-665fa7bdaea2",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-token",
+              "leftValue": "={{ $json.token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "79300870-3939-42d2-8566-4603527288d8",
+      "name": "Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM utilisateurs WHERE token_session = '{{ $('Parse Parameters').first().json.token }}' AND actif = true AND token_expiration > NOW()",
+        "options": {}
+      },
+      "id": "3d468b3d-8c19-4fc1-a79e-75aaa5a22da4",
+      "name": "Search User By Token",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "user-found",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f2353986-6a87-4e52-806b-2c76b94d6821",
+      "name": "Token Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.*, f.facture_num, f.magasin, f.date_facture, c.nom as client_nom, c.ville as client_ville FROM produits p LEFT JOIN factures f ON f.id = p.facture_id LEFT JOIN clients c ON c.id = f.client_id ORDER BY p.created_at DESC",
+        "options": {}
+      },
+      "id": "cdc131ae-6c8c-4d0c-8a46-1607537c04b0",
+      "name": "Fetch Products",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        448,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function buildNav(userName, userRole, token, baseUrl, currentPage) {\n  const ADMIN = ['commercial','responsable','patron','webmaster'];\n  const isAdmin = ADMIN.includes(userRole);\n  const roleNames = { decoupe_toile:'D\\u00e9coupe toile', couture:'Couture', decoupe_armature:'D\\u00e9coupe armature', assemblage:'Assemblage', reglage:'R\\u00e9glage', emballage:'Emballage', expedition:'Exp\\u00e9dition', commercial:'Commercial', responsable:'Responsable', patron:'Patron', webmaster:'Webmaster' };\n  const roleDisplay = roleNames[userRole] || userRole;\n  const u = (p) => `https://${baseUrl}/webhook/${p}?token=${token}`;\n  const a = (page) => currentPage === page ? ' active' : '';\n  const links = [];\n  links.push({ label:'Accueil', page:'home', href:u('home') });\n  links.push({ label:'Production', page:'production', href:u('production') });\n  if (isAdmin) links.push({ label:'Validation', page:'validation', href:u('validation') });\n  if (isAdmin || userRole==='expedition') links.push({ label:'Dashboard', page:'dashboard', href:u('dashboard') });\n  if (['expedition','responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Exp\\u00e9dition', page:'expedition', href:u('expedition') });\n  if (isAdmin) links.push({ label:'Import', page:'upload', href:u('upload') });\n  if (['responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Compta', page:'comptabilite', href:u('comptabilite') });\n  if (['expedition','responsable','patron','webmaster'].includes(userRole)) links.push({ label:'B2B', page:'b2b', href:u('production') + '&action=b2b-list' });\n  if (userRole==='webmaster') links.push({ label:'Utilisateurs', page:'users', href:u('users') });\n  const linksHtml = links.map(l => `<a href=\"${l.href}\" class=\"nav-link${a(l.page)}\">${l.label}</a>`).join('');\n  return `<nav class=\"main-nav\">\n    <a class=\"nav-brand\" href=\"${u('home')}\">MON USINE</a>\n    <div class=\"nav-links\">${linksHtml}</div>\n    <div class=\"nav-user\">\n      <span class=\"nav-uname\">${userName}</span>\n      <span class=\"nav-urole\">${roleDisplay}</span>\n      <a class=\"nav-logout\" href=\"https://${baseUrl}/webhook/login\">D\\u00e9connexion</a>\n    </div>\n  </nav>`;\n}\n\nconst user = $('Search User By Token').first().json;\nconst fields = user.fields || user;\nconst token = $('Parse Parameters').first().json.token;\nconst baseUrl = $('Webhook Home').first().json.headers?.host || 'localhost';\nconst userRole = fields.role || 'couture';\nconst userName = fields.nom_complet || fields.nom_utilisateur || 'Utilisateur';\n\n// --- KPI ---\nconst allProducts = $('Fetch Products').all().filter(i => i.json && i.json.id);\nconst products = allProducts.map(i => {\n  const f = i.json.fields || i.json;\n  return { sv: f.statut_validation || '', sp: f.statut_production || '' };\n});\n\nconst ROLE_STAGE = {\n  decoupe_toile: 'D\\u00e9coupe toile', couture: 'Couture', decoupe_armature: 'D\\u00e9coupe armature',\n  assemblage: 'Assemblage', reglage: 'R\\u00e9glage', emballage: 'Emballage', expedition: 'Exp\\u00e9dition'\n};\n\nconst enAttente = products.filter(p => p.sv === 'En attente').length;\nconst enProd = products.filter(p => p.sp && p.sp !== 'Termin\\u00e9').length;\nconst termines = products.filter(p => p.sp === 'Termin\\u00e9').length;\nconst total = products.length;\n\nlet kpis = [];\nif (ROLE_STAGE[userRole]) {\n  const stage = ROLE_STAGE[userRole];\n  const mine = products.filter(p => p.sp === stage).length;\n  kpis = [\n    { v: mine, l: '\\u00c0 traiter', c: '#d97706', accent: true },\n    { v: enProd, l: 'En production', c: '#2563eb', accent: false },\n    { v: termines, l: 'Termin\\u00e9s', c: '#059669', accent: false }\n  ];\n} else if (userRole === 'commercial') {\n  const valides = products.filter(p => p.sv === 'Valid\\u00e9').length;\n  kpis = [\n    { v: enAttente, l: 'En attente', c: '#d97706', accent: true },\n    { v: valides, l: 'Valid\\u00e9s', c: '#059669', accent: false },\n    { v: enProd, l: 'En production', c: '#2563eb', accent: false },\n    { v: total, l: 'Total', c: '#7c3aed', accent: false }\n  ];\n} else {\n  kpis = [\n    { v: enAttente, l: 'En attente', c: '#d97706', accent: true },\n    { v: enProd, l: 'En production', c: '#2563eb', accent: false },\n    { v: termines, l: 'Termin\\u00e9s', c: '#059669', accent: false },\n    { v: total, l: 'Total', c: '#7c3aed', accent: false }\n  ];\n}\n\nconst kpisHtml = kpis.map(k =>\n  '<div class=\"kpi' + (k.accent ? ' accent' : '') + '\"><div class=\"kv\" style=\"color:' + k.c + '\">' + k.v + '</div><div class=\"kl\">' + k.l + '</div></div>'\n).join('');\n\n// --- Navigation cards ---\nconst allCards = [\n  { icon: '\\u2699', title: 'Production', desc: 'Suivi des \\u00e9tapes de fabrication', url: '/webhook/production?token=' + token, roles: ['decoupe_toile','couture','decoupe_armature','assemblage','reglage','emballage','expedition','commercial','responsable','patron','webmaster'], color: '#2563eb' },\n  { icon: '\\ud83d\\udcca', title: 'Dashboard', desc: 'Statistiques et vue d\\'ensemble', url: '/webhook/dashboard?token=' + token, roles: ['expedition','commercial','responsable','patron','webmaster'], color: '#7c3aed' },\n  { icon: '\\u2705', title: 'Validation', desc: 'Validation des commandes', url: '/webhook/validation?token=' + token, roles: ['commercial','responsable','patron','webmaster'], color: '#059669' },\n  { icon: '\\ud83d\\ude9a', title: 'Exp\\u00e9dition', desc: 'Suivi des exp\\u00e9ditions', url: '/webhook/expedition?token=' + token, roles: ['expedition','responsable','patron','webmaster'], color: '#14b8a6' },\n  { icon: '\\ud83d\\udcc4', title: 'Import Facture', desc: 'Importer une facture PDF', url: '/webhook/upload?token=' + token, roles: ['responsable','patron','webmaster'], color: '#ea580c' },\n  { icon: '\\ud83d\\udcb0', title: 'Comptabilit\\u00e9', desc: 'Factures, acomptes, paiements', url: '/webhook/comptabilite?token=' + token, roles: ['responsable','patron','webmaster'], color: '#d97706' },\n  {\n    icon: '📦',\n    title: 'Préparation B2B',\n    desc: 'Bons de préparation composants',\n    url: '/webhook/production?action=b2b-list&token=' + token,\n    roles: ['expedition','responsable','patron','webmaster'],\n    color: '#8b5cf6'\n  },\n  { icon: '\\ud83d\\udc65', title: 'Utilisateurs', desc: 'Gestion des comptes', url: '/webhook/users?token=' + token, roles: ['webmaster'], color: '#dc2626' }\n];\n\nconst visibleCards = allCards.filter(c => c.roles.includes(userRole));\n\nconst roleNames = {\n  decoupe_toile: 'D\\u00e9coupe toile', couture: 'Couture', decoupe_armature: 'D\\u00e9coupe armature',\n  assemblage: 'Assemblage', reglage: 'R\\u00e9glage', emballage: 'Emballage',\n  expedition: 'Exp\\u00e9dition', commercial: 'Commercial', responsable: 'Responsable',\n  patron: 'Patron', webmaster: 'Webmaster'\n};\nconst roleDisplay = roleNames[userRole] || userRole;\n\nconst cardsHtml = visibleCards.map(card =>\n  '<a href=\"https://' + baseUrl + card.url + '\" class=\"card\" style=\"--card-color:' + card.color + '\"><div class=\"card-icon\">' + card.icon + '</div><div class=\"card-body\"><div class=\"card-title\">' + card.title + '</div><div class=\"card-desc\">' + card.desc + '</div></div><div class=\"card-arrow\">\\u2192</div></a>'\n).join('');\n\nconst now = new Date();\nconst greeting = now.getHours() < 12 ? 'Bonjour' : (now.getHours() < 18 ? 'Bon apr\\u00e8s-midi' : 'Bonsoir');\n\nconst html = `<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no\">\n  <title>Portail - MON USINE</title>\n  <style>\n.main-nav{position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:12px;background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 18px;box-shadow:0 1px 3px rgba(0,0,0,0.06);font-size:0.85rem;flex-wrap:wrap}\n.nav-brand{color:#2563eb;font-weight:800;font-size:1rem;text-decoration:none;white-space:nowrap}\n.nav-links{display:flex;gap:4px;flex:1;overflow-x:auto;scrollbar-width:none}\n.nav-links::-webkit-scrollbar{display:none}\n.nav-link{color:#6b7280;text-decoration:none;padding:6px 10px;border-radius:8px;white-space:nowrap;transition:all 0.2s}\n.nav-link:hover{background:#eff6ff;color:#2563eb}\n.nav-link.active{background:#eff6ff;color:#2563eb;font-weight:600}\n.nav-user{display:flex;align-items:center;gap:8px;margin-left:auto;white-space:nowrap}\n.nav-uname{color:#2563eb;font-weight:600}\n.nav-urole{color:#6b7280;font-size:0.75rem}\n.nav-logout{color:#dc2626;text-decoration:none;font-size:0.8rem;padding:4px 8px;border:1px solid #fecaca;border-radius:6px}\n.nav-logout:hover{background:#fef2f2}\n\n*{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:'Segoe UI',-apple-system,sans-serif;background:#f0f2f5;min-height:100vh;color:#111827;display:flex;flex-direction:column}\n\n/* === LAYOUT === */\n.content{flex:1;display:flex;flex-direction:column;max-width:1400px;width:100%;margin:0 auto;padding:0}\n\n/* === WELCOME BAR === */\n.welcome{display:flex;align-items:center;gap:16px;padding:16px 28px;background:#fff;border-bottom:1px solid #e5e7eb}\n.welcome h1{font-size:1.3rem;font-weight:700}\n.welcome h1 span{color:#2563eb}\n.welcome .role-tag{padding:4px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:0.78rem;font-weight:600;color:#2563eb}\n.welcome .spacer{flex:1}\n.welcome .date{font-size:0.82rem;color:#9ca3af}\n\n/* === KPI STRIP === */\n.kpi-strip{display:flex;gap:10px;padding:14px 28px;background:#fff;border-bottom:1px solid #e5e7eb}\n.kpi{display:flex;flex-direction:column;align-items:center;padding:12px 22px;border:1px solid #e5e7eb;border-radius:10px;min-width:100px;transition:all 0.15s}\n.kpi:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.06)}\n.kpi.accent{border-width:2px}\n.kv{font-size:1.8rem;font-weight:800;line-height:1.1}\n.kl{font-size:0.65rem;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin-top:3px;white-space:nowrap}\n\n/* === CARDS === */\n.cards-area{flex:1;display:flex;align-items:center;justify-content:center;padding:28px}\n.cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;width:100%;max-width:1200px}\n.card{display:flex;align-items:center;gap:18px;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:22px 24px;text-decoration:none;color:#111827;transition:all 0.2s;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.04)}\n.card:hover{border-color:var(--card-color,#2563eb);transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,0.08)}\n.card:active{transform:translateY(0)}\n.card-icon{font-size:2rem;width:52px;height:52px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--card-color,#2563eb) 8%,transparent);border-radius:12px;flex-shrink:0}\n.card-body{flex:1;min-width:0}\n.card-title{font-size:1.1rem;font-weight:700;margin-bottom:2px;color:var(--card-color,#111827)}\n.card-desc{color:#6b7280;font-size:0.82rem;line-height:1.3}\n.card-arrow{font-size:1.2rem;color:#d1d5db;transition:all 0.2s;flex-shrink:0}\n.card:hover .card-arrow{color:var(--card-color,#2563eb);transform:translateX(4px)}\n\n/* === RESPONSIVE === */\n@media(max-width:768px){\n  .welcome{padding:12px 16px;gap:10px}\n  .welcome h1{font-size:1.1rem}\n  .kpi-strip{padding:10px 16px;gap:8px;overflow-x:auto;scrollbar-width:none}\n  .kpi-strip::-webkit-scrollbar{display:none}\n  .kpi{padding:10px 16px;min-width:85px}\n  .kv{font-size:1.4rem}\n  .cards-area{padding:16px}\n  .cards-grid{grid-template-columns:1fr 1fr;gap:12px}\n  .card{padding:16px}\n  .card-icon{width:44px;height:44px;font-size:1.6rem}\n  .nav-user .nav-urole{display:none}\n}\n@media(max-width:480px){\n  .main-nav{padding:8px 12px;gap:8px;font-size:0.8rem}\n  .nav-brand{font-size:0.9rem}\n  .nav-link{padding:4px 7px;font-size:0.75rem}\n  .nav-uname{display:none}\n  .cards-grid{grid-template-columns:1fr}\n  .welcome .date{display:none}\n  .kpi{min-width:75px;padding:8px 12px}\n  .kv{font-size:1.2rem}\n}\n  </style>\n</head>\n<body>\n${buildNav(userName, userRole, token, baseUrl, 'home')}\n\n<div class=\"content\">\n  <div class=\"welcome\">\n    <h1>${greeting}, <span>${userName}</span></h1>\n    <span class=\"role-tag\">${roleDisplay}</span>\n    <span class=\"spacer\"></span>\n    <span class=\"date\">${now.toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', year:'numeric'})}</span>\n  </div>\n\n  <div class=\"kpi-strip\">${kpisHtml}</div>\n\n  <div class=\"cards-area\">\n    <div class=\"cards-grid\">${cardsHtml}</div>\n  </div>\n</div>\n\n</body>\n</html>`;\n\nreturn [{json: {html}}];"
+      },
+      "id": "7892d442-bc8d-4a5e-9ad7-9f691f70be32",
+      "name": "Generate Portal HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "2546d273-8b48-4e48-bda5-7741775b5ec1",
+      "name": "Respond HTML",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const baseUrl = $('Webhook Home').first().json.headers?.host || 'localhost';\nconst currentUrl = `https://${baseUrl}/webhook/home`;\nconst loginUrl = `https://${baseUrl}/webhook/login?redirect_url=${encodeURIComponent(currentUrl)}`;\n\nreturn [{\n  json: {\n    redirect_url: loginUrl\n  }\n}];"
+      },
+      "id": "59091e26-01a0-4332-b1ae-f86c4ab848b3",
+      "name": "Build Login Redirect",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=Redirecting to login...",
+        "options": {
+          "responseCode": 302,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Location",
+                "value": "={{ $json.redirect_url }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "d568562b-9a6e-4690-9d01-7b0df4a9bdff",
+      "name": "Redirect To Login",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        272
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Home": {
+      "main": [
+        [
+          {
+            "node": "Parse Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Parameters": {
+      "main": [
+        [
+          {
+            "node": "Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Search User By Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Login Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search User By Token": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Products",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Login Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Products": {
+      "main": [
+        [
+          {
+            "node": "Generate Portal HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Portal HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Login Redirect": {
+      "main": [
+        [
+          {
+            "node": "Redirect To Login",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-06 14:32:30.927",
+  "updatedAt": "2026-03-24 14:04:28.217",
+  "description": ""
+}

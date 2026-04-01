@@ -1,0 +1,577 @@
+{
+  "id": "7tItnnA6XSmpW00H",
+  "name": "09-user-management",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "users",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "4b25da52-673f-49a9-8fbe-4c838ed94a78",
+      "name": "Webhook Users",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1776,
+        320
+      ],
+      "webhookId": "user-management"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst token = query.token || '';\nconst action = query.action || 'list'; // list, create, toggle, reset_pin\nconst userId = query.user_id || '';\nconst nom_utilisateur = query.nom_utilisateur || '';\nconst nom_complet = query.nom_complet || '';\nconst code_pin = query.code_pin || '';\nconst role = query.role || '';\n\nreturn [{\n  json: {\n    token,\n    action,\n    user_id: userId,\n    nom_utilisateur,\n    nom_complet,\n    code_pin,\n    role\n  }\n}];"
+      },
+      "id": "990bb3d3-40b5-4871-b81e-155cd791b611",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1552,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-token",
+              "leftValue": "={{ $json.token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d61ea0b9-6edd-445c-af30-cf5edd6fdc8d",
+      "name": "Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1344,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const baseUrl = $('Webhook Users').first().json.headers?.host || 'localhost';\nconst currentUrl = `https://${baseUrl}/webhook/users`;\nconst loginUrl = `https://${baseUrl}/webhook/login?redirect_url=${encodeURIComponent(currentUrl)}`;\n\nreturn [{\n  json: {\n    redirect_url: loginUrl\n  }\n}];"
+      },
+      "id": "a2c2d04e-b1ba-4460-9f8f-d82a1e3edcc0",
+      "name": "Build Login Redirect",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=Redirecting to login...",
+        "options": {
+          "responseCode": 302,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Location",
+                "value": "={{ $json.redirect_url }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "407deac4-0db6-44bb-ba11-cd50bf5d6cbe",
+      "name": "Redirect To Login",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -896,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM utilisateurs WHERE token_session = '{{ $('Parse Parameters').first().json.token }}' AND actif = true AND token_expiration > NOW()",
+        "options": {}
+      },
+      "id": "3a5687b7-b292-464c-a2c5-e077b9fa0df0",
+      "name": "Search User By Token",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1120,
+        208
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "user-found",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e5973f17-fc4d-4923-aff6-f130611388a8",
+      "name": "Token Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Only webmaster can manage users\nconst user = $input.first().json;\nconst fields = user.fields || user;\nconst params = $('Parse Parameters').first().json;\nconst userRole = fields.role || '';\nconst userName = fields.nom_complet || fields.nom_utilisateur || 'Utilisateur';\nconst hasAccess = userRole === 'webmaster';\n\nreturn [{\n  json: {\n    user_id: user.id,\n    nom_complet: userName,\n    role: userRole,\n    token: params.token,\n    has_access: hasAccess,\n    action: params.action,\n    target_user_id: params.user_id,\n    new_nom_utilisateur: params.nom_utilisateur,\n    new_nom_complet: params.nom_complet,\n    new_code_pin: params.code_pin,\n    new_role: params.role\n  }\n}];"
+      },
+      "id": "c8b4d11a-99be-4d4b-9c73-481ab7f59fe4",
+      "name": "Check Role Permission",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-access",
+              "leftValue": "={{ $json.has_access }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5bafd871-f876-45df-8b42-7fa6a9f48642",
+      "name": "Has Access?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Accès refusé</title><style>body{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#111827;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.denied{background:#fef2f2;border:1px solid #fecaca;padding:40px;border-radius:14px;text-align:center;max-width:400px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}h1{color:#dc2626;margin:0 0 15px}p{color:#6b7280;margin:0 0 20px}a{color:#2563eb;text-decoration:none}</style></head><body><div class=\"denied\"><h1>Accès refusé</h1><p>Seul le rôle Webmaster peut gérer les utilisateurs.</p><a href=\"/webhook/login\">Se reconnecter</a></div></body></html>",
+        "options": {
+          "responseCode": 403,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c1346cc9-92c1-4bf9-9afc-dce9ca3a2d56",
+      "name": "Respond Access Denied",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -224,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-action",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "toggle",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "375b64d7-6046-4b2c-a4bf-1bd743257989",
+      "name": "Is Toggle Action?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM utilisateurs WHERE id = '{{ $('Check Role Permission').first().json.target_user_id }}'",
+        "options": {}
+      },
+      "id": "11d498ed-8e39-4765-9230-8d022cb8a34c",
+      "name": "Get Target User",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const user = $input.first().json;\nconst fields = user.fields || user;\nconst currentActive = fields.actif || false;\n\nreturn [{\n  json: {\n    id: user.id,\n    actif: !currentActive\n  }\n}];"
+      },
+      "id": "b4ed859e-6887-4815-8af1-a72152c1953c",
+      "name": "Toggle Active Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE utilisateurs SET actif = {{ $json.actif }}, nom = '{{ $json.nom }}', email = '{{ $json.email }}', code_pin = '{{ $json.code_pin }}', role = '{{ $json.role }}' WHERE id = '{{ $json.id }}' RETURNING *",
+        "options": {}
+      },
+      "id": "e11b9674-7646-461a-aa47-c9e8b3356c9f",
+      "name": "Update User Active",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        448,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM utilisateurs ORDER BY nom",
+        "options": {}
+      },
+      "id": "bd11ca23-f91b-4e5a-9add-d6a421bf1409",
+      "name": "List All Users",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        672,
+        96
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function buildNav(userName, userRole, token, baseUrl, currentPage) {\n  const ADMIN = ['commercial','responsable','patron','webmaster'];\n  const isAdmin = ADMIN.includes(userRole);\n  const roleNames = { decoupe_toile:'Découpe toile', couture:'Couture', decoupe_armature:'Découpe armature', assemblage:'Assemblage', reglage:'Réglage', emballage:'Emballage', expedition:'Expédition', commercial:'Commercial', responsable:'Responsable', patron:'Patron', webmaster:'Webmaster' };\n  const roleDisplay = roleNames[userRole] || userRole;\n  const u = (p) => `https://${baseUrl}/webhook/${p}?token=${token}`;\n  const a = (page) => currentPage === page ? ' active' : '';\n  const links = [];\n  links.push({ label:'Accueil', page:'home', href:u('home') });\n  links.push({ label:'Production', page:'production', href:u('production') });\n  if (isAdmin) links.push({ label:'Validation', page:'validation', href:u('validation') });\n  if (isAdmin || userRole==='expedition') links.push({ label:'Dashboard', page:'dashboard', href:u('dashboard') });\n  if (['expedition','responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Expédition', page:'expedition', href:u('expedition') });\n  if (isAdmin) links.push({ label:'Import', page:'upload', href:u('upload') });\n  if (['responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Compta', page:'comptabilite', href:u('comptabilite') });\n  if (userRole==='webmaster') links.push({ label:'Utilisateurs', page:'users', href:u('users') });\n  const linksHtml = links.map(l => `<a href=\"${l.href}\" class=\"nav-link${a(l.page)}\">${l.label}</a>`).join('');\n  return `<nav class=\"main-nav\">\n    <a class=\"nav-brand\" href=\"${u('home')}\">MON USINE</a>\n    \n    <div class=\"nav-user\">\n      <span class=\"nav-uname\">${userName}</span>\n      <span class=\"nav-urole\">${roleDisplay}</span>\n      <a class=\"nav-logout\" href=\"https://${baseUrl}/webhook/login\">Déconnexion</a>\n    </div>\n  </nav>`;\n}\n\nconst items = $input.all();\nconst authInfo = $('Check Role Permission').first().json;\nconst token = authInfo.token;\nconst userName = authInfo.nom_complet;\nconst userRole = authInfo.role || 'webmaster';\nconst baseUrl = $('Webhook Users').first().json.headers?.host || 'localhost';\nconst logoutUrl = `https://${baseUrl}/webhook/login`;\nconst dashboardUrl = `https://${baseUrl}/webhook/dashboard?token=${token}`;\n\nconst roles = [\n  'decoupe_toile', 'couture', 'decoupe_armature', 'assemblage',\n  'reglage', 'emballage', 'expedition', 'commercial',\n  'responsable', 'patron', 'webmaster'\n];\n\nconst roleLabels = {\n  'decoupe_toile': 'Découpe toile',\n  'couture': 'Couture',\n  'decoupe_armature': 'Découpe armature',\n  'assemblage': 'Assemblage',\n  'reglage': 'Réglage',\n  'emballage': 'Emballage',\n  'expedition': 'Expédition',\n  'commercial': 'Commercial',\n  'responsable': 'Responsable',\n  'patron': 'Patron',\n  'webmaster': 'Webmaster'\n};\n\n// Build user rows\nlet usersHtml = '';\nfor (const item of items) {\n  const f = item.json.fields || item.json;\n  if (!f.nom_utilisateur && !f.nom_complet) continue;\n  \n  const isActive = f.actif === true;\n  const toggleUrl = `https://${baseUrl}/webhook/users?action=toggle&user_id=${item.json.id}&token=${token}`;\n  const lastLogin = f.derniere_connexion ? new Date(f.derniere_connexion).toLocaleString('fr-FR') : 'Jamais';\n  \n  usersHtml += `\n    <tr class=\"${isActive ? '' : 'inactive'}\">\n      <td><strong>${f.nom_complet || f.nom_utilisateur || '-'}</strong><br><span style=\"color:#6b7280;font-size:0.8rem\">${f.nom_utilisateur || '-'}</span></td>\n      <td>${roleLabels[f.role] || f.role || '-'}</td>\n      <td style=\"font-family:monospace\">${f.code_pin ? '****' : '-'}</td>\n      <td>${isActive ? '<span style=\"color:#059669\">Actif</span>' : '<span style=\"color:#dc2626\">Inactif</span>'}</td>\n      <td style=\"font-size:0.8rem;color:#6b7280\">${lastLogin}</td>\n      <td><a href=\"${toggleUrl}\" class=\"btn-small ${isActive ? 'btn-warn' : 'btn-ok'}\">${isActive ? 'D&eacute;sactiver' : 'Activer'}</a></td>\n    </tr>`;\n}\n\nconst roleOptions = roles.map(r => `<option value=\"${r}\">${roleLabels[r]}</option>`).join('');\n\nconst html = `<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Gestion Utilisateurs - MON USINE</title>\n  <style>\n    .main-nav{position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:12px;background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 18px;margin:-15px -10px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.06);font-size:0.85rem;flex-wrap:wrap}\n.nav-brand{color:#2563eb;font-weight:800;font-size:1rem;text-decoration:none;white-space:nowrap}\n.nav-links::-webkit-scrollbar{display:none}\n.nav-link{color:#6b7280;text-decoration:none;padding:6px 10px;border-radius:8px;white-space:nowrap;transition:all 0.2s}\n.nav-link:hover{background:#eff6ff;color:#2563eb}\n.nav-link.active{background:#eff6ff;color:#2563eb;font-weight:600}\n.nav-user{display:flex;align-items:center;gap:8px;margin-left:auto;white-space:nowrap}\n.nav-uname{color:#2563eb;font-weight:600}\n.nav-urole{color:#6b7280;font-size:0.75rem}\n.nav-logout{color:#dc2626;text-decoration:none;font-size:0.8rem;padding:4px 8px;border:1px solid #fecaca;border-radius:6px}\n.nav-logout:hover{background:#fef2f2}\n@media(max-width:768px){.nav-user .nav-urole{display:none}}\n@media(max-width:480px){.main-nav{padding:8px 12px;gap:8px;font-size:0.8rem}.nav-brand{font-size:0.9rem}.nav-link{padding:4px 7px;font-size:0.75rem}.nav-uname{display:none}.nav-logout{font-size:0.75rem}}\n\n    *{box-sizing:border-box;margin:0;padding:0}\n    body{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#111827;padding:20px}\n    .container{max-width:1000px;margin:0 auto}\n    .header{text-align:center;padding:20px 0 30px}\n    .header h1{font-size:1.5rem;color:#d97706;margin-bottom:5px}\n    .header p{color:#6b7280;font-size:0.9rem}\n    .section{background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}\n    .section h2{font-size:1rem;color:#2563eb;margin-bottom:15px;padding-bottom:10px;border-bottom:2px solid #e5e7eb}\n    table{width:100%;border-collapse:collapse}\n    th,td{padding:12px;text-align:left;border-bottom:1px solid #e5e7eb}\n    th{font-size:0.75rem;color:#6b7280;text-transform:uppercase;background:#f9fafb}\n    td{font-size:0.9rem}\n    tr.inactive{opacity:0.5}\n    .btn-small{display:inline-block;padding:6px 12px;border-radius:6px;text-decoration:none;font-size:0.8rem;font-weight:600}\n    .btn-warn{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}\n    .btn-ok{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}\n    .create-form{display:grid;grid-template-columns:1fr 1fr;gap:10px}\n    .create-form .full{grid-column:1/-1}\n    input,select{padding:12px;border:1px solid #e5e7eb;border-radius:8px;font-size:0.95rem;background:#ffffff;color:#111827}\n    input::placeholder{color:#9ca3af}\n    .btn-create{padding:14px;border:none;border-radius:10px;font-size:1rem;font-weight:bold;cursor:pointer;background:#2563eb;color:#fff;grid-column:1/-1}\n    .footer{text-align:center;padding:20px;color:#9ca3af;font-size:0.8rem}\n    .note{background:#fffbeb;border-left:3px solid #d97706;padding:12px;border-radius:0 8px 8px 0;color:#d97706;font-size:0.85rem;margin-bottom:15px}\n    @media(max-width:768px){\n      .create-form{grid-template-columns:1fr}\n      table{font-size:0.8rem}\n      th,td{padding:8px 4px}\n    }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    ${buildNav(userName, userRole, token, baseUrl, 'users')}\n    \n    <div class=\"header\">\n      <h1>Gestion des Utilisateurs</h1>\n      <p>Cr&eacute;er, activer/d&eacute;sactiver les comptes utilisateurs</p>\n    </div>\n    \n    <div class=\"note\">\n      Pour cr&eacute;er un utilisateur, ajoutez-le directement dans la table <strong>Utilisateurs</strong> d'Airtable avec les champs : nom_utilisateur, nom_complet, code_pin (4 chiffres), role, et cochez actif.<br>\n      Depuis cette page vous pouvez activer/d&eacute;sactiver les comptes existants.\n    </div>\n    \n    <div class=\"section\">\n      <h2>Utilisateurs (${items.length})</h2>\n      <table>\n        <thead>\n          <tr>\n            <th>Utilisateur</th>\n            <th>R&ocirc;le</th>\n            <th>PIN</th>\n            <th>Statut</th>\n            <th>Derni&egrave;re connexion</th>\n            <th>Action</th>\n          </tr>\n        </thead>\n        <tbody>\n          ${usersHtml || '<tr><td colspan=\"6\" style=\"text-align:center;color:#6b7280\">Aucun utilisateur</td></tr>'}\n        </tbody>\n      </table>\n    </div>\n    \n    <div class=\"section\">\n      <h2>Matrice des Permissions</h2>\n      <table style=\"font-size:0.8rem\">\n        <thead>\n          <tr><th>R&ocirc;le</th><th>Production</th><th>Validation</th><th>Exp&eacute;dition</th><th>Dashboard</th></tr>\n        </thead>\n        <tbody>\n          <tr><td>D&eacute;coupe toile</td><td style=\"color:#059669\">Son &eacute;tape</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td></tr>\n          <tr><td>Couture</td><td style=\"color:#059669\">Son &eacute;tape</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td></tr>\n          <tr><td>D&eacute;coupe armature</td><td style=\"color:#059669\">Son &eacute;tape</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td></tr>\n          <tr><td>Assemblage</td><td style=\"color:#059669\">Son &eacute;tape</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td></tr>\n          <tr><td>R&eacute;glage</td><td style=\"color:#059669\">Son &eacute;tape</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td></tr>\n          <tr><td>Emballage</td><td style=\"color:#059669\">Son &eacute;tape</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td></tr>\n          <tr><td>Exp&eacute;dition</td><td style=\"color:#d97706\">Voir</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#059669\">Oui</td><td style=\"color:#dc2626\">Non</td></tr>\n          <tr><td>Commercial</td><td style=\"color:#d97706\">Voir</td><td style=\"color:#059669\">Oui</td><td style=\"color:#dc2626\">Non</td><td style=\"color:#dc2626\">Non</td></tr>\n          <tr><td>Responsable</td><td style=\"color:#059669\">Tout</td><td style=\"color:#059669\">Oui</td><td style=\"color:#059669\">Oui</td><td style=\"color:#059669\">Oui</td></tr>\n          <tr><td>Patron</td><td style=\"color:#059669\">Tout</td><td style=\"color:#059669\">Oui</td><td style=\"color:#059669\">Oui</td><td style=\"color:#059669\">Oui</td></tr>\n          <tr><td style=\"color:#d97706\">Webmaster</td><td style=\"color:#059669\">Tout</td><td style=\"color:#059669\">Oui</td><td style=\"color:#059669\">Oui</td><td style=\"color:#059669\">Oui + Users</td></tr>\n        </tbody>\n      </table>\n    </div>\n    \n    <div class=\"footer\">\n      <p>MON USINE - Administration</p>\n      <div class=\"nav-links\">\n        <a href=\"${dashboardUrl}\">Dashboard</a>\n        <a href=\"https://${baseUrl}/webhook/validation?token=${token}\">Validation</a>\n        <a href=\"https://${baseUrl}/webhook/expedition?token=${token}\">Exp&eacute;dition</a>\n        <a href=\"${logoutUrl}\">D&eacute;connexion</a>\n      </div>\n    </div>\n  </div>\n</body>\n</html>`;\n\nreturn [{json: {html}}];"
+      },
+      "id": "d4a62d60-85df-4b81-a913-6cd19f2d8f84",
+      "name": "Generate Users HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "06a2003f-224b-4520-b7d0-9ff04e810938",
+      "name": "Respond HTML",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        96
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Users": {
+      "main": [
+        [
+          {
+            "node": "Parse Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Parameters": {
+      "main": [
+        [
+          {
+            "node": "Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Search User By Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Login Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Login Redirect": {
+      "main": [
+        [
+          {
+            "node": "Redirect To Login",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search User By Token": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Check Role Permission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Login Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Role Permission": {
+      "main": [
+        [
+          {
+            "node": "Has Access?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Access?": {
+      "main": [
+        [
+          {
+            "node": "Is Toggle Action?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Access Denied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Toggle Action?": {
+      "main": [
+        [
+          {
+            "node": "Get Target User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "List All Users",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Target User": {
+      "main": [
+        [
+          {
+            "node": "Toggle Active Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Toggle Active Status": {
+      "main": [
+        [
+          {
+            "node": "Update User Active",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update User Active": {
+      "main": [
+        [
+          {
+            "node": "List All Users",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List All Users": {
+      "main": [
+        [
+          {
+            "node": "Generate Users HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Users HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-06 14:32:16.729",
+  "updatedAt": "2026-03-24 14:04:28.179",
+  "description": ""
+}

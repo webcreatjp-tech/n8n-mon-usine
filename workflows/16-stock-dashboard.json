@@ -1,0 +1,359 @@
+{
+  "id": "yKKglLmvp4aw8Wqb",
+  "name": "16-stock-dashboard",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 15 - Dashboard Stock Volets Roulants\n\n**URL:** /webhook/stock-list?token=ABC\n\n**Fonctionnalités:**\n- Vue tableau de tous les stocks volets\n- Highlight rouge: rupture (stock=0)\n- Highlight orange: stock bas (<seuil)\n- Vert: stock OK\n- QR scan compatible (mobile-first)\n- Filtre par emplacement\n- Bouton incrément/décrément rapide",
+        "height": 300,
+        "width": 320
+      },
+      "id": "9c0b1be0-0493-4161-a75d-e29174be888a",
+      "name": "📋 Note Dashboard",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        368,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "path": "stock-list",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "08b512b8-ce9f-4628-b8bb-33c0c3b7d03b",
+      "name": "Webhook Stock List",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        208,
+        304
+      ],
+      "webhookId": "stock-list"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst token = query.token || '';\nconst filter = query.filter || 'all';\nconst sort = query.sort || 'alerte';\n\nreturn [{ json: { token, filter, sort, timestamp: new Date().toISOString() } }];"
+      },
+      "id": "92969f63-69c9-4957-8156-fc73d91124b2",
+      "name": "Parse Params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true
+          },
+          "conditions": [
+            {
+              "id": "has-token",
+              "leftValue": "={{ $json.token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4b5709d2-f88d-4430-becd-0f28ad1471b7",
+      "name": "Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        640,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const baseUrl = $('Webhook Stock List').first().json.headers?.host || 'localhost';\nconst currentUrl = `https://${baseUrl}/webhook/stock-list?token=`;\nconst loginUrl = `https://${baseUrl}/webhook/login?redirect_url=${encodeURIComponent(currentUrl)}`;\nreturn [{ json: { redirect_url: loginUrl } }];"
+      },
+      "id": "f64fafb1-7568-4e89-9835-9659e495efca",
+      "name": "Build Redirect",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=Redirecting...",
+        "options": {
+          "responseCode": 302,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Location",
+                "value": "={{ $json.redirect_url }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "54510686-bfae-45ec-8a4f-66c22fe1ff99",
+      "name": "Redirect Login",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1088,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const token = $json.token;\nconst validToken = $env.STOCK_WEBHOOK_TOKEN || 'ABC';\nif (token !== validToken) {\n  return [{ json: { ...($json), valid: false } }];\n}\nreturn [{ json: { ...($json), valid: true } }];"
+      },
+      "id": "c178446f-9663-47c2-91fb-e00454915823",
+      "name": "Validate Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true
+          },
+          "conditions": [
+            {
+              "id": "is-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5808f65f-6a60-4c7e-b7e4-19a32eb85933",
+      "name": "Token Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM produits WHERE LOWER(designation) LIKE '%volet%' OR LOWER(categorie) LIKE '%volet%' ORDER BY designation",
+        "options": {}
+      },
+      "id": "2604f68f-e934-45a2-8d71-6b99b83bfbf9",
+      "name": "Get All Stocks Volets",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1312,
+        224
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst params = $('Parse Params').first().json;\nconst token = params.token;\n\nconst stocks = items\n  .filter(item => item.json?.id)\n  .map(item => {\n    const f = item.json.fields || {};\n    const qte = f.QuantiteDisponible ?? 0;\n    const seuil = f.SeuilMin ?? 2;\n    const designation = f.Designation?.[0] || f.Designation || 'N/A';\n    const categorie = f.Categorie?.[0] || f.Categorie || 'N/A';\n    const emplacement = f.Emplacement || 'N/A';\n    const dernierMvt = f.DernierMvt ? new Date(f.DernierMvt).toLocaleString('fr-FR') : 'N/A';\n    const fournisseur = f.Fournisseur?.[0] || 'N/A';\n    let statusClass, statusLabel;\n    if (qte === 0) { statusClass = 'rupture'; statusLabel = '🔴 RUPTURE'; }\n    else if (qte < seuil) { statusClass = 'bas'; statusLabel = '🟡 BAS'; }\n    else { statusClass = 'ok'; statusLabel = '✅ OK'; }\n    return {\n      id: item.json.id,\n      designation, categorie, emplacement, fournisseur,\n      qte, seuil, dernierMvt, statusClass, statusLabel\n    };\n  });\n\nconst nbRuptures = stocks.filter(s => s.statusClass === 'rupture').length;\nconst nbBas = stocks.filter(s => s.statusClass === 'bas').length;\nconst nbOk = stocks.filter(s => s.statusClass === 'ok').length;\nconst now = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });\n\n// Build HTML rows\nconst rows = stocks.map(s => `\n  <tr class=\"row-${s.statusClass}\" data-emplacement=\"${s.emplacement}\">\n    <td class=\"td-status\"><span class=\"badge badge-${s.statusClass}\">${s.statusLabel}</span></td>\n    <td class=\"td-prod\">\n      <div class=\"prod-name\">${s.designation}</div>\n      <div class=\"prod-cat\">${s.categorie}</div>\n    </td>\n    <td class=\"td-stock\">\n      <span class=\"stock-num stock-${s.statusClass}\">${s.qte}</span>\n      <span class=\"stock-seuil\">/ ${s.seuil}</span>\n    </td>\n    <td class=\"td-empl\">\n      <span class=\"empl-badge empl-${s.emplacement.toLowerCase()}\">${s.emplacement}</span>\n    </td>\n    <td class=\"td-mvt\">${s.dernierMvt}</td>\n    <td class=\"td-actions\">\n      <button class=\"btn-mvt btn-dec\" onclick=\"mvt('${s.id}','${token}','decrement')\" title=\"Décrémenter\">−</button>\n      <button class=\"btn-mvt btn-inc\" onclick=\"mvt('${s.id}','${token}','increment')\" title=\"Incrémenter\">+</button>\n    </td>\n  </tr>`).join('');\n\nconst html = `<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0\">\n<meta name=\"theme-color\" content=\"#1a1a2e\">\n<title>📦 Stocks Volets — Mon Usine</title>\n<style>\n  :root {\n    --bg: #0f0f1a;\n    --surface: #1a1a2e;\n    --surface2: #252540;\n    --text: #e2e8f0;\n    --text-muted: #94a3b8;\n    --accent: #6366f1;\n    --ok: #22c55e;\n    --bas: #f59e0b;\n    --rupture: #ef4444;\n    --border: rgba(255,255,255,0.08);\n    --radius: 12px;\n    --shadow: 0 4px 24px rgba(0,0,0,0.4);\n  }\n  * { box-sizing: border-box; margin: 0; padding: 0; }\n  body {\n    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;\n    background: var(--bg);\n    color: var(--text);\n    min-height: 100vh;\n    font-size: 14px;\n  }\n  .header {\n    background: linear-gradient(135deg, var(--accent) 0%, #8b5cf6 100%);\n    padding: 16px 20px;\n    position: sticky;\n    top: 0;\n    z-index: 100;\n    box-shadow: var(--shadow);\n  }\n  .header-inner {\n    max-width: 900px;\n    margin: 0 auto;\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    flex-wrap: wrap;\n    gap: 8px;\n  }\n  .header-title { font-size: 18px; font-weight: 700; }\n  .header-sub { font-size: 12px; opacity: 0.8; }\n  .stats-bar {\n    background: var(--surface);\n    border-bottom: 1px solid var(--border);\n    padding: 12px 20px;\n    position: sticky;\n    top: 56px;\n    z-index: 99;\n  }\n  .stats-inner {\n    max-width: 900px;\n    margin: 0 auto;\n    display: flex;\n    gap: 12px;\n    flex-wrap: wrap;\n    align-items: center;\n  }\n  .stat-chip {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    background: var(--surface2);\n    border-radius: 20px;\n    padding: 6px 14px;\n    font-size: 13px;\n    font-weight: 600;\n    border: 1px solid var(--border);\n  }\n  .stat-chip.stat-ok { border-color: var(--ok); color: var(--ok); }\n  .stat-chip.stat-bas { border-color: var(--bas); color: var(--bas); }\n  .stat-chip.stat-rupture { border-color: var(--rupture); color: var(--rupture); }\n  .filter-bar {\n    max-width: 900px;\n    margin: 16px auto 0;\n    display: flex;\n    gap: 8px;\n    flex-wrap: wrap;\n    padding: 0 20px;\n  }\n  .filter-btn {\n    background: var(--surface2);\n    color: var(--text-muted);\n    border: 1px solid var(--border);\n    border-radius: 8px;\n    padding: 6px 14px;\n    font-size: 12px;\n    cursor: pointer;\n    transition: all 0.2s;\n  }\n  .filter-btn.active {\n    background: var(--accent);\n    color: #fff;\n    border-color: var(--accent);\n  }\n  .main { max-width: 900px; margin: 16px auto; padding: 0 12px 80px; }\n  .table-wrap {\n    background: var(--surface);\n    border-radius: var(--radius);\n    border: 1px solid var(--border);\n    overflow: hidden;\n    box-shadow: var(--shadow);\n    overflow-x: auto;\n  }\n  table { width: 100%; border-collapse: collapse; }\n  th {\n    background: var(--surface2);\n    color: var(--text-muted);\n    font-size: 11px;\n    font-weight: 600;\n    text-transform: uppercase;\n    letter-spacing: 0.5px;\n    padding: 12px 16px;\n    text-align: left;\n    border-bottom: 1px solid var(--border);\n  }\n  tr {\n    border-bottom: 1px solid var(--border);\n    transition: background 0.15s;\n  }\n  tr:hover { background: rgba(255,255,255,0.03); }\n  tr:last-child { border-bottom: none; }\n  td { padding: 12px 16px; vertical-align: middle; }\n  .row-rupture { border-left: 3px solid var(--rupture); }\n  .row-bas { border-left: 3px solid var(--bas); }\n  .row-ok { border-left: 3px solid var(--ok); }\n  .badge {\n    display: inline-block;\n    padding: 3px 10px;\n    border-radius: 12px;\n    font-size: 11px;\n    font-weight: 700;\n    white-space: nowrap;\n  }\n  .badge-ok { background: rgba(34,197,94,0.15); color: var(--ok); }\n  .badge-bas { background: rgba(245,158,11,0.15); color: var(--bas); }\n  .badge-rupture { background: rgba(239,68,68,0.15); color: var(--rupture); }\n  .prod-name { font-weight: 600; font-size: 13px; }\n  .prod-cat { font-size: 11px; color: var(--text-muted); margin-top: 2px; }\n  .stock-num { font-size: 20px; font-weight: 800; }\n  .stock-ok { color: var(--ok); }\n  .stock-bas { color: var(--bas); }\n  .stock-rupture { color: var(--rupture); }\n  .stock-seuil { font-size: 11px; color: var(--text-muted); margin-left: 4px; }\n  .empl-badge {\n    font-size: 11px;\n    padding: 2px 8px;\n    border-radius: 6px;\n    background: var(--surface2);\n    color: var(--text-muted);\n  }\n  .empl-atelier { background: rgba(99,102,241,0.15); color: #a5b4fc; }\n  .empl-magasin { background: rgba(34,197,94,0.1); color: #86efac; }\n  .empl-fournisseur { background: rgba(245,158,11,0.1); color: #fcd34d; }\n  .td-mvt { font-size: 11px; color: var(--text-muted); white-space: nowrap; }\n  .btn-mvt {\n    width: 32px;\n    height: 32px;\n    border-radius: 8px;\n    border: none;\n    font-size: 18px;\n    font-weight: 700;\n    cursor: pointer;\n    transition: transform 0.15s, opacity 0.15s;\n    margin: 0 2px;\n  }\n  .btn-mvt:active { transform: scale(0.92); }\n  .btn-dec { background: rgba(239,68,68,0.15); color: var(--rupture); }\n  .btn-inc { background: rgba(34,197,94,0.15); color: var(--ok); }\n  .empty-state {\n    text-align: center;\n    padding: 48px 20px;\n    color: var(--text-muted);\n  }\n  .empty-state .icon { font-size: 48px; }\n  .toast {\n    position: fixed;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%) translateY(100px);\n    background: var(--surface2);\n    color: var(--text);\n    padding: 12px 24px;\n    border-radius: 12px;\n    box-shadow: var(--shadow);\n    border: 1px solid var(--border);\n    z-index: 999;\n    font-weight: 600;\n    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);\n    max-width: 320px;\n    text-align: center;\n  }\n  .toast.show { transform: translateX(-50%) translateY(0); }\n  .toast.toast-ok { border-color: var(--ok); }\n  .toast.toast-err { border-color: var(--rupture); }\n  .fab {\n    position: fixed;\n    bottom: 24px;\n    right: 24px;\n    background: var(--accent);\n    color: #fff;\n    border: none;\n    width: 56px;\n    height: 56px;\n    border-radius: 50%;\n    font-size: 22px;\n    cursor: pointer;\n    box-shadow: 0 4px 16px rgba(99,102,241,0.5);\n    z-index: 200;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n  }\n  .refresh-time { font-size: 11px; color: var(--text-muted); }\n  @media (max-width: 600px) {\n    .th-mvt, .td-mvt-label { display: none; }\n    .td-mvt { font-size: 10px; }\n    th, td { padding: 10px 8px; }\n    .prod-name { font-size: 12px; }\n    .stock-num { font-size: 18px; }\n  }\n  .no-stocks {\n    background: var(--surface);\n    border-radius: var(--radius);\n    padding: 48px;\n    text-align: center;\n    color: var(--ok);\n    font-size: 16px;\n    font-weight: 600;\n  }\n</style>\n</head>\n<body>\n<div class=\"header\">\n  <div class=\"header-inner\">\n    <div>\n      <div class=\"header-title\">📦 Stocks Volets Roulants</div>\n      <div class=\"header-sub\">Mon Usine — Gestion Inventaire</div>\n    </div>\n    <div class=\"refresh-time\">Màj: ${now}</div>\n  </div>\n</div>\n\n<div class=\"stats-bar\">\n  <div class=\"stats-inner\">\n    <div class=\"stat-chip stat-rupture\">🔴 ${nbRuptures} rupture(s)</div>\n    <div class=\"stat-chip stat-bas\">🟡 ${nbBas} stock(s) bas</div>\n    <div class=\"stat-chip stat-ok\">✅ ${nbOk} OK</div>\n    <span style=\"margin-left:auto;font-size:12px;color:var(--text-muted)\">${stocks.length} produits</span>\n  </div>\n</div>\n\n<div class=\"filter-bar\">\n  <button class=\"filter-btn active\" onclick=\"filterStocks('all',this)\">Tous</button>\n  <button class=\"filter-btn\" onclick=\"filterStocks('Atelier',this)\">🔧 Atelier</button>\n  <button class=\"filter-btn\" onclick=\"filterStocks('Magasin',this)\">🏪 Magasin</button>\n  <button class=\"filter-btn\" onclick=\"filterStocks('Fournisseur',this)\">🚚 Fournisseur</button>\n  <button class=\"filter-btn\" onclick=\"filterStocks('alert',this)\">⚠️ Alertes</button>\n</div>\n\n<div class=\"main\">\n${stocks.length === 0 ? '<div class=\"no-stocks\">✅ Aucun stock volet roulant enregistré.<br><small>Créez des enregistrements dans la table Stocks Airtable.</small></div>' : `\n  <div class=\"table-wrap\">\n    <table id=\"stockTable\">\n      <thead>\n        <tr>\n          <th>Statut</th>\n          <th>Désignation</th>\n          <th>Stock / Seuil</th>\n          <th>Emplacement</th>\n          <th class=\"td-mvt-label\">Dernier Mvt</th>\n          <th>Actions</th>\n        </tr>\n      </thead>\n      <tbody id=\"stockBody\">\n        ${rows}\n      </tbody>\n    </table>\n  </div>`}\n</div>\n\n<button class=\"fab\" onclick=\"location.reload()\" title=\"Actualiser\">🔄</button>\n<div class=\"toast\" id=\"toast\"></div>\n\n<script>\nconst TOKEN = '${token}';\nconst BASE_URL = window.location.origin + '/webhook/stock-scan';\n\nfunction showToast(msg, type='ok') {\n  const t = document.getElementById('toast');\n  t.textContent = msg;\n  t.className = 'toast show toast-' + type;\n  setTimeout(() => { t.classList.remove('show'); }, 3500);\n}\n\nasync function mvt(recordId, token, action) {\n  const btn = event.target;\n  btn.disabled = true;\n  btn.style.opacity = '0.5';\n  try {\n    const url = BASE_URL + '?bonid=' + encodeURIComponent(recordId) + '&token=' + token + '&action=' + action + '&qte=1&operateur=dashboard';\n    const resp = await fetch(url, { method: 'POST' });\n    const data = await resp.json();\n    if (data.success) {\n      showToast((action==='decrement'?'\\u2212':'+')+' 1 — Stock: ' + data.stock_apres + (data.stock_bas?' ⚠️ BAS':''), data.stock_bas?'err':'ok');\n      setTimeout(() => location.reload(), 1500);\n    } else {\n      showToast('Erreur: ' + (data.error || 'Inconnu'), 'err');\n    }\n  } catch(e) {\n    showToast('Erreur réseau', 'err');\n  } finally {\n    btn.disabled = false;\n    btn.style.opacity = '1';\n  }\n}\n\nfunction filterStocks(val, btn) {\n  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));\n  btn.classList.add('active');\n  const rows = document.querySelectorAll('#stockBody tr');\n  rows.forEach(row => {\n    if (val === 'all') {\n      row.style.display = '';\n    } else if (val === 'alert') {\n      row.style.display = (row.classList.contains('row-rupture') || row.classList.contains('row-bas')) ? '' : 'none';\n    } else {\n      row.style.display = row.dataset.emplacement === val ? '' : 'none';\n    }\n  });\n}\n\n// Auto-refresh toutes les 5 minutes\nsetTimeout(() => location.reload(), 5 * 60 * 1000);\n</script>\n</body>\n</html>`;\n\nreturn [{ json: { html } }];"
+      },
+      "id": "05b5839f-a9d7-45a4-a079-58075b5772a2",
+      "name": "Build Stock HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-cache, no-store"
+              }
+            ]
+          }
+        }
+      },
+      "id": "de928949-3ead-4e23-ad69-2b616c860699",
+      "name": "Respond HTML",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1744,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<h1 style='color:red'>403 Accès refusé</h1>",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "90b6a81a-0fac-4b1e-bd83-7f0818e95624",
+      "name": "403 Accès Refusé",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1312,
+        432
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Stock List": {
+      "main": [
+        [
+          {
+            "node": "Parse Params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Params": {
+      "main": [
+        [
+          {
+            "node": "Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Validate Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Redirect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Redirect": {
+      "main": [
+        [
+          {
+            "node": "Redirect Login",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Token": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Get All Stocks Volets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "403 Accès Refusé",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Stocks Volets": {
+      "main": [
+        [
+          {
+            "node": "Build Stock HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Stock HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-06 14:35:58.552",
+  "updatedAt": "2026-03-24 14:04:28.250",
+  "description": ""
+}

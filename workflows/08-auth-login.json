@@ -1,0 +1,364 @@
+{
+  "id": "oPGbzVXHLlGtg0yH",
+  "name": "08-auth-login",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "login",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "8a70ccd7-965d-495c-8d00-9eec543e952f",
+      "name": "Webhook Login",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        224
+      ],
+      "webhookId": "auth-login"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst action = query.action || 'show_pin'; // show_pin, validate_pin, logout\nconst pin = query.pin || '';\nconst redirectUrl = query.redirect_url || '';\nconst token = query.token || '';\n\nreturn [{\n  json: {\n    action,\n    pin,\n    redirect_url: redirectUrl,\n    token,\n    error: false\n  }\n}];"
+      },
+      "id": "8abaf50a-087a-457a-ae52-a591ccf46db2",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "action-validate",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "validate_pin",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4d4ff75f-510b-4afb-9f1f-ad6d88af6379",
+      "name": "Action Router",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM utilisateurs WHERE code_pin = '{{ $('Parse Parameters').first().json.pin }}' AND actif = true",
+        "options": {}
+      },
+      "id": "1cdac0b4-d3ea-4c4d-b7d1-bf2ed050905c",
+      "name": "Search User By PIN",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -272,
+        16
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $('Parse Parameters').first().json;\nconst userResult = $input.first().json;\nconst baseUrl = $('Webhook Login').first().json.headers?.host || 'localhost';\n\n// Check if user was found\nif (!userResult || !userResult.id) {\n  return [{\n    json: {\n      authenticated: false,\n      error_message: 'Code PIN invalide',\n      redirect_url: params.redirect_url,\n      show_pin: true\n    }\n  }];\n}\n\nconst fields = userResult.fields || userResult;\n\n// Generate session token (32 hex chars) - crypto-safe\nlet token;\ntry {\n  token = globalThis.crypto.randomUUID().replace(/-/g, '');\n} catch(e) {\n  const a = new Uint8Array(16);\n  for (let i = 0; i < 16; i++) a[i] = Math.floor(Math.random() * 256);\n  token = Array.from(a, b => b.toString(16).padStart(2, '0')).join('');\n}\n\n// Token expires in 12 hours\nconst expiration = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();\n\n// Build redirect URL with token\nlet finalRedirect = params.redirect_url || `https://${baseUrl}/webhook/home`;\n// Append token to redirect URL\nconst separator = finalRedirect.includes('?') ? '&' : '?';\nfinalRedirect = finalRedirect + separator + 'token=' + token;\n\nreturn [{\n  json: {\n    authenticated: true,\n    user_record_id: userResult.id,\n    nom_complet: fields.nom_complet || fields.nom_utilisateur || 'Utilisateur',\n    role: fields.role || 'couture',\n    token: token,\n    token_expiration: expiration,\n    redirect_url: finalRedirect,\n    show_pin: false\n  }\n}];"
+      },
+      "id": "4035cc2e-0ced-40df-8f59-224082f93549",
+      "name": "Process Auth",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "is-auth",
+              "leftValue": "={{ $json.authenticated }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8138097d-1d45-4a73-a30e-15b3aa132248",
+      "name": "Is Authenticated?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        224,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Process Auth').first().json;\n\nreturn [{\n  json: {\n    id: data.user_record_id,\n    token_session: data.token,\n    token_expiration: data.token_expiration,\n    derniere_connexion: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "27bc883b-543d-4ab4-811b-b67411a2c929",
+      "name": "Prepare Token Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE utilisateurs SET token_session = '{{ $json.token_session }}', token_expiration = '{{ $json.token_expiration }}', derniere_connexion = '{{ $json.derniere_connexion }}' WHERE id = '{{ $json.id }}' RETURNING *",
+        "options": {}
+      },
+      "id": "1d46a9fd-ca25-4313-96c4-d7b3d6fc40b8",
+      "name": "Save Token",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        720,
+        16
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=Redirecting...",
+        "options": {
+          "responseCode": 302,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Location",
+                "value": "={{ $('Process Auth').first().json.redirect_url }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "709f0297-9fe1-4d23-8ab6-2404858dd685",
+      "name": "Redirect With Token",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        944,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $('Parse Parameters').first().json;\nconst errorMsg = $json.error_message || '';\nconst redirectUrl = params.redirect_url || $json.redirect_url || '';\nconst baseUrl = $('Webhook Login').first().json.headers?.host || 'localhost';\n\nconst loginActionUrl = `https://${baseUrl}/webhook/login`;\n\nconst html = `<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no\">\n  <title>Connexion - MON USINE</title>\n  <style>\n    *{box-sizing:border-box;margin:0;padding:0}\n    body{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;min-height:100vh;display:flex;justify-content:center;align-items:center;padding:15px;color:#111827}\n    .login-container{width:100%;max-width:360px;text-align:center}\n    .logo{font-size:2rem;font-weight:bold;color:#2563eb;margin-bottom:10px}\n    .subtitle{color:#6b7280;font-size:0.9rem;margin-bottom:30px}\n    .pin-display{display:flex;justify-content:center;gap:12px;margin-bottom:25px}\n    .pin-dot{width:20px;height:20px;border-radius:50%;background:#e5e7eb;border:2px solid #d1d5db;transition:all 0.2s}\n    .pin-dot.filled{background:#2563eb;border-color:#2563eb;box-shadow:0 0 10px rgba(37,99,235,0.3)}\n    .pin-dot.error{background:#dc2626;border-color:#dc2626;box-shadow:0 0 10px rgba(220,38,38,0.3);animation:shake 0.5s}\n    @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}\n    .error-msg{color:#dc2626;font-size:0.9rem;margin-bottom:15px;min-height:24px}\n    .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}\n    .key{background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:22px;font-size:1.8rem;font-weight:600;color:#111827;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:all 0.15s;user-select:none}\n    .key:active{background:#eff6ff;transform:scale(0.95);border-color:#2563eb}\n    .key.special{font-size:1.2rem;color:#6b7280}\n    .key.special:active{background:#fef2f2;border-color:#dc2626}\n    .key.empty{visibility:hidden;pointer-events:none}\n    .loading{display:none;margin:20px auto}\n    .loading.active{display:block}\n    .spinner{width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto}\n    @keyframes spin{to{transform:rotate(360deg)}}\n    .user-info{display:none;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:15px;margin-bottom:20px}\n    .user-info.show{display:block}\n    .user-info .name{font-size:1.2rem;font-weight:bold;color:#059669}\n    .user-info .role{color:#6b7280;font-size:0.85rem;margin-top:5px}\n  </style>\n</head>\n<body>\n  <div class=\"login-container\">\n    <div class=\"logo\">MON USINE</div>\n    <div class=\"subtitle\">Entrez votre code PIN</div>\n    \n    <div class=\"pin-display\">\n      <div class=\"pin-dot\" id=\"d0\"></div>\n      <div class=\"pin-dot\" id=\"d1\"></div>\n      <div class=\"pin-dot\" id=\"d2\"></div>\n      <div class=\"pin-dot\" id=\"d3\"></div>\n    </div>\n    \n    <div class=\"error-msg\" id=\"errorMsg\">${errorMsg}</div>\n    \n    <div class=\"loading\" id=\"loading\">\n      <div class=\"spinner\"></div>\n      <p style=\"color:#6b7280;margin-top:10px;font-size:0.85rem\">Connexion en cours...</p>\n    </div>\n    \n    <div class=\"keypad\" id=\"keypad\">\n      <div class=\"key\" onclick=\"addDigit('1')\">1</div>\n      <div class=\"key\" onclick=\"addDigit('2')\">2</div>\n      <div class=\"key\" onclick=\"addDigit('3')\">3</div>\n      <div class=\"key\" onclick=\"addDigit('4')\">4</div>\n      <div class=\"key\" onclick=\"addDigit('5')\">5</div>\n      <div class=\"key\" onclick=\"addDigit('6')\">6</div>\n      <div class=\"key\" onclick=\"addDigit('7')\">7</div>\n      <div class=\"key\" onclick=\"addDigit('8')\">8</div>\n      <div class=\"key\" onclick=\"addDigit('9')\">9</div>\n      <div class=\"key empty\"></div>\n      <div class=\"key\" onclick=\"addDigit('0')\">0</div>\n      <div class=\"key special\" onclick=\"clearPin()\">Effacer</div>\n    </div>\n  </div>\n  \n  <script>\n    let pin = '';\n    const redirectUrl = decodeURIComponent('${encodeURIComponent(redirectUrl)}');\n    const loginUrl = '${loginActionUrl}';\n    \n    function addDigit(d) {\n      if (pin.length >= 4) return;\n      pin += d;\n      updateDots();\n      document.getElementById('errorMsg').textContent = '';\n      \n      if (pin.length === 4) {\n        // Auto-submit after 4 digits\n        setTimeout(submitPin, 200);\n      }\n    }\n    \n    function clearPin() {\n      pin = '';\n      updateDots();\n      // Remove error styling\n      document.querySelectorAll('.pin-dot').forEach(d => d.classList.remove('error'));\n      document.getElementById('errorMsg').textContent = '';\n    }\n    \n    function updateDots() {\n      for (let i = 0; i < 4; i++) {\n        const dot = document.getElementById('d' + i);\n        dot.classList.toggle('filled', i < pin.length);\n        dot.classList.remove('error');\n      }\n    }\n    \n    function submitPin() {\n      document.getElementById('keypad').style.display = 'none';\n      document.getElementById('loading').classList.add('active');\n      \n      let url = loginUrl + '?action=validate_pin&pin=' + pin;\n      if (redirectUrl) {\n        url += '&redirect_url=' + encodeURIComponent(redirectUrl);\n      }\n      \n      window.location.href = url;\n    }\n  </script>\n</body>\n</html>`;\n\nreturn [{json: {html}}];"
+      },
+      "id": "457e8e24-e66c-4acb-9b58-5b825f77a5ef",
+      "name": "Generate PIN Pad HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ee7c89c6-61b6-422c-b8e9-885edde4b0d5",
+      "name": "Respond PIN Pad",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        608,
+        288
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Login": {
+      "main": [
+        [
+          {
+            "node": "Parse Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Parameters": {
+      "main": [
+        [
+          {
+            "node": "Action Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action Router": {
+      "main": [
+        [
+          {
+            "node": "Search User By PIN",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate PIN Pad HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search User By PIN": {
+      "main": [
+        [
+          {
+            "node": "Process Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Auth": {
+      "main": [
+        [
+          {
+            "node": "Is Authenticated?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Authenticated?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Token Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate PIN Pad HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Token Update": {
+      "main": [
+        [
+          {
+            "node": "Save Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Token": {
+      "main": [
+        [
+          {
+            "node": "Redirect With Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate PIN Pad HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond PIN Pad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-06 14:32:03.968",
+  "updatedAt": "2026-03-24 14:04:28.143",
+  "description": ""
+}

@@ -1,0 +1,471 @@
+{
+  "id": "Veq0K86kR1EN8cuI",
+  "name": "12-serve-files",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "doc",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "eaecebca-a395-4dd1-887e-e0745ab0cbb7",
+      "name": "Webhook Files",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1984,
+        320
+      ],
+      "webhookId": "serve-files-pdf"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst rec = (query.rec || '').trim();\nconst token = (query.token || '').trim();\nreturn [{ json: { rec, token } }];"
+      },
+      "id": "5bed1eec-105c-4268-9f36-a31c0196cf4e",
+      "name": "Parse Params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-token",
+              "leftValue": "={{ $json.token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9954a68d-0f02-439d-9aef-d1cb10bcb928",
+      "name": "Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1536,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM utilisateurs WHERE token_session = '{{ $('Parse Params').first().json.token }}' AND actif = true AND token_expiration > NOW()",
+        "options": {}
+      },
+      "id": "ecae4ada-77a9-4242-ad0a-2e21b20a2c11",
+      "name": "Search User By Token",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1328,
+        240
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "token-valid",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1d6fdb83-6145-4b5d-9fb4-b968b8ccd5d1",
+      "name": "Token Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rec = $('Parse Params').first().json.rec;\nif (!rec || !/^rec[a-zA-Z0-9]{10,20}$/.test(rec)) {\n  return [{ json: { error: true, message: 'ID invalide' } }];\n}\nreturn [{ json: { recordId: rec, error: false } }];"
+      },
+      "id": "5abfdf08-ca81-4d76-af36-c62b81d2078f",
+      "name": "Validate Record ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid-rec",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2d745e62-54ed-4185-8fd2-c97eedb6ae5e",
+      "name": "Is Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM uploads WHERE id = '{{ $('Validate Record ID').first().json.recordId }}'",
+        "options": {}
+      },
+      "id": "d49d547d-eeaf-4565-b33d-427584039df3",
+      "name": "Fetch Upload Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -448,
+        80
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-file",
+              "leftValue": "={{ $json.Fichier }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "36527762-a839-4fe3-8009-111480d94f5f",
+      "name": "Has Attachment?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Fetch Upload Record').first().json.Fichier[0].url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "d047f6c4-e44c-4d7c-9108-cda0c867980d",
+      "name": "Download PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/pdf"
+              },
+              {
+                "name": "Content-Disposition",
+                "value": "inline"
+              }
+            ]
+          }
+        }
+      },
+      "id": "47bd55c2-7625-4ae4-bc87-4e8cf8dfa079",
+      "name": "Respond PDF",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Erreur</title></head><body><h1>Fichier non trouvé</h1><p>Le PDF demandé n'existe pas ou n'a pas de pièce jointe.</p></body></html>",
+        "options": {
+          "responseCode": 404,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "d3f34d25-6ce1-47d3-9993-7fc3f3fa167f",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -448,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Non autorisé</title></head><body style=\"font-family:'Segoe UI',sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f2f5;color:#111827\"><div style=\"text-align:center;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:40px;box-shadow:0 1px 3px rgba(0,0,0,0.04)\"><h1 style=\"color:#dc2626\">Accès non autorisé</h1><p style=\"color:#6b7280\">Veuillez vous connecter pour accéder à ce document.</p></div></body></html>",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "7eb63bdd-5ddf-404e-adc5-30a829d83583",
+      "name": "Respond Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1104,
+        480
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Files": {
+      "main": [
+        [
+          {
+            "node": "Parse Params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Params": {
+      "main": [
+        [
+          {
+            "node": "Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Search User By Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search User By Token": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Validate Record ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Record ID": {
+      "main": [
+        [
+          {
+            "node": "Is Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Upload Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Upload Record": {
+      "main": [
+        [
+          {
+            "node": "Has Attachment?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Attachment?": {
+      "main": [
+        [
+          {
+            "node": "Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF": {
+      "main": [
+        [
+          {
+            "node": "Respond PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-06 14:33:41.501",
+  "updatedAt": "2026-03-24 14:04:28.565",
+  "description": ""
+}

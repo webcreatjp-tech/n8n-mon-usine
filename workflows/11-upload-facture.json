@@ -1,0 +1,1077 @@
+{
+  "id": "OxkGVhX8CbUouUVO",
+  "name": "11-upload-facture",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "upload",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a9f83185-f785-4cee-806c-e25f90eaffed",
+      "name": "Webhook Upload GET",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1536,
+        208
+      ],
+      "webhookId": "upload-form-get"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst token = (input.query || {}).token || '';\nconst host = input.headers?.host || 'localhost';\nreturn [{ json: { token, host } }];"
+      },
+      "id": "a91f3e69-a04c-45cb-8831-f0cbaba2a09e",
+      "name": "Parse Params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1328,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.token }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f4d3f5fd-35c9-42d7-a18d-5090f26184d2",
+      "name": "Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM utilisateurs WHERE token_session = '{{ $('Parse Params').first().json.token }}' AND actif = true AND token_expiration > NOW()",
+        "options": {}
+      },
+      "id": "96c66eea-501a-4a7e-8b19-fe7fe652e195",
+      "name": "Search User By Token",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -880,
+        112
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "096a5a58-84a9-4fbe-92b4-bc3f9c01c3cc",
+      "name": "Token Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const user = $input.first().json;\nconst fields = user.fields || user;\nconst params = $('Parse Params').first().json;\nconst ALLOWED_ROLES = ['responsable','patron','webmaster'];\nconst role = fields.role || '';\nconst hasAccess = ALLOWED_ROLES.includes(role);\nreturn [{ json: {\n  hasAccess, role, token: params.token, host: params.host,\n  nom_complet: fields.nom_complet || fields.nom_utilisateur || 'Utilisateur'\n}}];"
+      },
+      "id": "9afc1c60-dbe8-4682-9b96-7b69529178fb",
+      "name": "Check Role Permission",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.hasAccess }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": "true"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "50b6d6e8-f0c5-49d0-afe8-618bd7e9ab38",
+      "name": "Has Access?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function buildNav(userName, userRole, token, baseUrl, currentPage) {\n  const ADMIN = ['commercial','responsable','patron','webmaster'];\n  const isAdmin = ADMIN.includes(userRole);\n  const roleNames = { decoupe_toile:'Découpe toile', couture:'Couture', decoupe_armature:'Découpe armature', assemblage:'Assemblage', reglage:'Réglage', emballage:'Emballage', expedition:'Expédition', commercial:'Commercial', responsable:'Responsable', patron:'Patron', webmaster:'Webmaster' };\n  const roleDisplay = roleNames[userRole] || userRole;\n  const u = (p) => `https://${baseUrl}/webhook/${p}?token=${token}`;\n  const a = (page) => currentPage === page ? ' active' : '';\n  const links = [];\n  links.push({ label:'Accueil', page:'home', href:u('home') });\n  links.push({ label:'Production', page:'production', href:u('production') });\n  if (isAdmin) links.push({ label:'Validation', page:'validation', href:u('validation') });\n  if (isAdmin || userRole==='expedition') links.push({ label:'Dashboard', page:'dashboard', href:u('dashboard') });\n  if (['expedition','responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Expédition', page:'expedition', href:u('expedition') });\n  if (isAdmin) links.push({ label:'Import', page:'upload', href:u('upload') });\n  if (['responsable','patron','webmaster'].includes(userRole)) links.push({ label:'Compta', page:'comptabilite', href:u('comptabilite') });\n  if (userRole==='webmaster') links.push({ label:'Utilisateurs', page:'users', href:u('users') });\n  const linksHtml = links.map(l => `<a href=\"${l.href}\" class=\"nav-link${a(l.page)}\">${l.label}</a>`).join('');\n  return `<nav class=\"main-nav\">\n    <a class=\"nav-brand\" href=\"${u('home')}\">MON USINE</a>\n    <div class=\"nav-links\">${linksHtml}</div>\n    <div class=\"nav-user\">\n      <span class=\"nav-uname\">${userName}</span>\n      <span class=\"nav-urole\">${roleDisplay}</span>\n      <a class=\"nav-logout\" href=\"https://${baseUrl}/webhook/login\">Déconnexion</a>\n    </div>\n  </nav>`;\n}\n\nconst params = $('Check Role Permission').first().json;\nconst token = params.token;\nconst userName = params.nom_complet;\nconst userRole = params.role;\nconst baseUrl = $('Webhook Upload GET').first().json.headers?.host || 'localhost';\nconst homeUrl = `https://${baseUrl}/webhook/home?token=${token}`;\nconst uploadUrl = `https://${baseUrl}/webhook/upload-submit?token=${token}`;\n\nconst html = `<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>Import Factures - MON USINE</title>\n<style>\n.main-nav{position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:12px;background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 18px;margin:-15px -10px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.06);font-size:0.85rem;flex-wrap:wrap}\n.nav-brand{color:#2563eb;font-weight:800;font-size:1rem;text-decoration:none;white-space:nowrap}\n.nav-links{display:flex;gap:4px;flex:1;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}\n.nav-links::-webkit-scrollbar{display:none}\n.nav-link{color:#6b7280;text-decoration:none;padding:6px 10px;border-radius:8px;white-space:nowrap;transition:all 0.2s}\n.nav-link:hover{background:#eff6ff;color:#2563eb}\n.nav-link.active{background:#eff6ff;color:#2563eb;font-weight:600}\n.nav-user{display:flex;align-items:center;gap:8px;margin-left:auto;white-space:nowrap}\n.nav-uname{color:#2563eb;font-weight:600}\n.nav-urole{color:#6b7280;font-size:0.75rem}\n.nav-logout{color:#dc2626;text-decoration:none;font-size:0.8rem;padding:4px 8px;border:1px solid #fecaca;border-radius:6px}\n.nav-logout:hover{background:#fef2f2}\n@media(max-width:768px){.nav-user .nav-urole{display:none}}\n@media(max-width:480px){.main-nav{padding:8px 12px;gap:8px;font-size:0.8rem}.nav-brand{font-size:0.9rem}.nav-link{padding:4px 7px;font-size:0.75rem}.nav-uname{display:none}.nav-logout{font-size:0.75rem}}\n\n*{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#111827;min-height:100vh}\n.main{max-width:700px;margin:0 auto;padding:40px 30px}\n.ptitle{font-size:1.6rem;font-weight:700;margin-bottom:4px}\n.psub{color:#6b7280;font-size:0.85rem;margin-bottom:30px}\n.drop-zone{border:2px dashed #d1d5db;border-radius:14px;padding:60px 30px;text-align:center;cursor:pointer;transition:all 0.3s;background:#ffffff}\n.drop-zone:hover,.drop-zone.drag{border-color:#2563eb;background:#eff6ff}\n.drop-zone.has-file{border-color:#059669;background:#ecfdf5}\n.dz-icon{font-size:3rem;margin-bottom:16px;opacity:0.5}\n.dz-text{color:#6b7280;font-size:1rem;margin-bottom:8px}\n.dz-hint{color:#9ca3af;font-size:0.8rem}\n.file-info{display:none;margin-top:20px;padding:14px 20px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;align-items:center;justify-content:space-between}\n.file-info.show{display:flex}\n.fi-name{color:#059669;font-weight:600;font-size:0.95rem}\n.fi-size{color:#6b7280;font-size:0.8rem}\n.submit-btn{display:block;width:100%;margin-top:24px;padding:16px;background:#059669;border:none;border-radius:12px;color:#fff;font-size:1.1rem;font-weight:700;cursor:pointer;transition:all 0.2s;opacity:0.4;pointer-events:none}\n.submit-btn.ready{opacity:1;pointer-events:auto}\n.submit-btn.ready:hover{transform:translateY(-2px);box-shadow:0 4px 20px rgba(5,150,105,0.3)}\n.loading{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;flex-direction:column;align-items:center;justify-content:center;gap:16px}\n.loading.show{display:flex}\n.spinner{width:48px;height:48px;border:4px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:spin 0.8s linear infinite}\n@keyframes spin{to{transform:rotate(360deg)}}\n.loading p{color:#111827;font-size:1rem;background:#ffffff;padding:8px 20px;border-radius:8px}\n.footer{text-align:center;padding:40px 0 20px;color:#9ca3af;font-size:0.8rem}\n@media(max-width:768px){.main{padding:20px 16px}}\n</style>\n</head>\n<body>\n${buildNav(userName, userRole, token, baseUrl, 'upload')}\n<div class=\"main\">\n<div class=\"ptitle\">Importer des Factures</div>\n<div class=\"psub\">D\\u00e9posez un ou plusieurs fichiers PDF pour lancer le traitement automatique</div>\n<form id=\"form\" action=\"${uploadUrl}\" method=\"POST\" enctype=\"multipart/form-data\">\\n<input type=\"hidden\" id=\"hurl\" value=\"${homeUrl}\">\n<div class=\"drop-zone\" id=\"dz\">\n<div class=\"dz-icon\">&#128196;</div>\n<div class=\"dz-text\">Glissez vos fichiers PDF ici</div>\n<div class=\"dz-hint\">ou cliquez pour parcourir</div>\n<input type=\"file\" name=\"fichier\" id=\"fi\" accept=\"application/pdf\" multiple style=\"display:none\">\n</div>\n<div class=\"file-info\" id=\"finfo\">\n<span class=\"fi-name\" id=\"fname\"></span>\n<span class=\"fi-size\" id=\"fsize\"></span>\n</div>\n<button type=\"submit\" class=\"submit-btn\" id=\"sbtn\">Envoyer</button>\n</form>\n<div class=\"footer\">MON USINE &middot; Syst\\u00e8me de Production</div>\n</div>\n<div class=\"loading\" id=\"load\">\n<div class=\"spinner\"></div>\n<p>Envoi en cours...</p>\n</div>\n<script>\nvar dz=document.getElementById('dz'),fi=document.getElementById('fi'),finfo=document.getElementById('finfo'),fname=document.getElementById('fname'),fsize=document.getElementById('fsize'),sbtn=document.getElementById('sbtn');\ndz.onclick=function(){fi.click()};\nfi.onchange=function(){if(!fi.files.length)return;var n=fi.files.length,t=0;for(var k=0;k<n;k++)t+=fi.files[k].size;fname.textContent=n===1?fi.files[0].name:n+' fichiers PDF';fsize.textContent=(t/1024/1024).toFixed(2)+' MB';finfo.className='file-info show';sbtn.className='submit-btn ready';sbtn.textContent='Envoyer '+n+' fichier'+(n>1?'s':'');dz.className='drop-zone has-file'};\n['dragenter','dragover'].forEach(function(e){dz.addEventListener(e,function(ev){ev.preventDefault();dz.classList.add('drag')})});\n['dragleave','drop'].forEach(function(e){dz.addEventListener(e,function(ev){ev.preventDefault();dz.classList.remove('drag')})});\ndz.addEventListener('drop',function(ev){var fs=ev.dataTransfer.files,ps=[];for(var k=0;k<fs.length;k++){if(fs[k].name.toLowerCase().endsWith('.pdf'))ps.push(fs[k])}if(ps.length){var dt=new DataTransfer();for(var k=0;k<ps.length;k++)dt.items.add(ps[k]);fi.files=dt.files;fi.dispatchEvent(new Event('change'))}});\ndocument.getElementById('form').onsubmit=function(e){\nif(!fi.files.length){e.preventDefault();return false}\nif(fi.files.length===1){document.getElementById('load').className='loading show';sbtn.style.pointerEvents='none';return true}\ne.preventDefault();\nvar ld=document.getElementById('load'),pr=ld.querySelector('p');ld.className='loading show';sbtn.style.pointerEvents='none';\nvar url=document.getElementById('form').action,tot=fi.files.length,ok=0,er=[],ix=0;\nfunction go(){if(ix>=tot){end();return}pr.textContent='Envoi '+(ix+1)+'/'+tot+' : '+fi.files[ix].name;var fd=new FormData();fd.append('fichier',fi.files[ix]);var x=new XMLHttpRequest();x.open('POST',url,true);x.timeout=60000;\nx.onload=function(){if(x.status>=200&&x.status<300)ok++;else er.push(fi.files[ix].name);ix++;go()};\nx.onerror=function(){er.push(fi.files[ix].name);ix++;go()};\nx.ontimeout=function(){er.push(fi.files[ix].name);ix++;go()};\nx.send(fd)}\nfunction end(){\nvar hu=document.getElementById('hurl')?document.getElementById('hurl').value:'';\nvar ic,ti,ms,cl;\nif(ok===tot){ic='\\u2705';cl='#059669';ti=ok+' fichier'+(ok>1?'s':'')+' import\\u00e9'+(ok>1?'s':'');ms='Le traitement d\\u00e9marrera dans les prochaines minutes.'}\nelse if(ok>0){ic='\\u26a0\\ufe0f';cl='#d97706';ti=ok+'/'+tot+' import\\u00e9'+(ok>1?'s':'');ms='Erreur : '+er.join(', ')}\nelse{ic='\\u274c';cl='#dc2626';ti='\\u00c9chec';ms='Aucun fichier import\\u00e9.'}\nld.innerHTML='<div style=\"font-size:4rem;margin-bottom:20px\">'+ic+'</div><div style=\"background:#fff;padding:30px 40px;border-radius:14px;text-align:center;max-width:500px;margin:0 20px\"><h2 style=\"color:'+cl+';margin-bottom:12px;font-size:1.5rem\">'+ti+'</h2><p style=\"color:#6b7280;margin-bottom:24px;line-height:1.5\">'+ms+'</p><div style=\"display:flex;gap:12px;justify-content:center;flex-wrap:wrap\"><a href=\"javascript:location.reload()\" style=\"display:inline-block;padding:12px 24px;border-radius:12px;text-decoration:none;font-weight:600;background:#059669;color:#fff\">Nouvel import</a>'+(hu?'<a href=\"'+hu+'\" style=\"display:inline-block;padding:12px 24px;border-radius:12px;text-decoration:none;font-weight:600;background:#eff6ff;border:1px solid #bfdbfe;color:#2563eb\">Accueil</a>':'')+'</div></div>'}\ngo()};\n</script>\n</body>\n</html>`;\n\nreturn [{json: {html}}];"
+      },
+      "id": "e4515371-b65d-425c-843d-43a9dd95b778",
+      "name": "Generate Upload Form",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "9f0b3d1a-6313-4d79-9be3-788d9b9d34e6",
+      "name": "Respond Form",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $('Parse Params').first().json;\nconst host = params.host || 'localhost';\nconst currentUrl = 'https://' + host + '/webhook/upload';\nconst loginUrl = 'https://' + host + '/webhook/login?redirect_url=' + encodeURIComponent(currentUrl);\nreturn [{ json: { redirect_url: loginUrl } }];"
+      },
+      "id": "3b491de5-a276-4cc3-810f-c01e852f7b15",
+      "name": "Build Redirect GET",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=Redirecting...",
+        "options": {
+          "responseCode": 302,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              },
+              {
+                "name": "Location",
+                "value": "={{ $json.redirect_url }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "e3eb4ff4-30d1-4afc-a32a-279aaa8b57f8",
+      "name": "Redirect Login GET",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -304,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "='<!DOCTYPE html><html lang=\"fr\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Acc\\u00e8s refus\\u00e9</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:\"Segoe UI\",-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#111827;min-height:100vh;display:flex;align-items:center;justify-content:center}.box{text-align:center;padding:40px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04);max-width:420px}.box h1{color:#dc2626;margin-bottom:16px}.box p{color:#6b7280;margin-bottom:24px}.box a{color:#2563eb;text-decoration:none}</style></head><body><div class=\"box\"><h1>Acc\\u00e8s refus\\u00e9</h1><p>Votre r\\u00f4le ne permet pas d\\u0027acc\\u00e9der \\u00e0 cette page.</p><a href=\"https://' + $input.first().json.host + '/webhook/home?token=' + $input.first().json.token + '\">Retour</a></div></body></html>'",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "9a664738-bdea-4765-b434-6b6b4723ad97",
+      "name": "Respond Denied GET",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-submit",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "cba81703-cfef-4248-9fa6-d21508c785cf",
+      "name": "Webhook Upload POST",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1536,
+        704
+      ],
+      "webhookId": "upload-file-post"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst token = (input.query || {}).token || '';\nconst host = input.headers?.host || 'localhost';\nconst hasBinary = !!($input.first().binary && $input.first().binary.fichier);\nreturn [{ json: { token, host, hasBinary } }];"
+      },
+      "id": "b280d773-2232-4ecd-8bef-dfea40ac29c0",
+      "name": "Parse POST Params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1328,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.token }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1de4f2dd-5d23-4e66-b875-44d383171596",
+      "name": "Has Token POST?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM utilisateurs WHERE token_session = '{{ $('Parse POST Params').first().json.token }}' AND actif = true AND token_expiration > NOW()",
+        "options": {}
+      },
+      "id": "5457e623-1b3c-49b9-a3c1-f937a53ac200",
+      "name": "Search User POST",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -880,
+        608
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4620549b-d311-4250-9e9c-6c5414d59545",
+      "name": "Token Valid POST?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const user = $input.first().json;\nconst fields = user.fields || user;\nconst params = $('Parse POST Params').first().json;\nconst ALLOWED_ROLES = ['responsable','patron','webmaster'];\nconst role = fields.role || '';\nconst hasAccess = ALLOWED_ROLES.includes(role);\nreturn [{ json: {\n  hasAccess, role, token: params.token, host: params.host,\n  nom_complet: fields.nom_complet || fields.nom_utilisateur || 'Utilisateur'\n}}];"
+      },
+      "id": "6c52e7ca-f698-4b95-bc90-119522c83e44",
+      "name": "Check Role POST",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -464,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $('Parse POST Params').first().json;\nconst host = params.host || 'localhost';\nconst currentUrl = 'https://' + host + '/webhook/upload';\nconst loginUrl = 'https://' + host + '/webhook/login?redirect_url=' + encodeURIComponent(currentUrl);\nreturn [{ json: { redirect_url: loginUrl } }];"
+      },
+      "id": "48e75a5f-a150-443c-911a-19bec3fd6d01",
+      "name": "Build Redirect POST",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=Redirecting...",
+        "options": {
+          "responseCode": 302,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              },
+              {
+                "name": "Location",
+                "value": "={{ $json.redirect_url }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "1ca222d0-1e05-495e-9822-63874c8973b7",
+      "name": "Redirect Login POST",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -656,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "='<!DOCTYPE html><html lang=\"fr\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Acc\\u00e8s refus\\u00e9</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:\"Segoe UI\",-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#111827;min-height:100vh;display:flex;align-items:center;justify-content:center}.box{text-align:center;padding:40px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04);max-width:420px}.box h1{color:#dc2626;margin-bottom:16px}.box p{color:#6b7280;margin-bottom:24px}.box a{color:#2563eb;text-decoration:none}</style></head><body><div class=\"box\"><h1>Acc\\u00e8s refus\\u00e9</h1><p>Votre r\\u00f4le ne permet pas d\\u0027acc\\u00e9der \\u00e0 cette page.</p><a href=\"https://' + $input.first().json.host + '/webhook/home?token=' + $input.first().json.token + '\">Retour</a></div></body></html>'",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "7eb80fcf-4763-4646-aa68-90f00842f6e0",
+      "name": "Respond Denied POST",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        352,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.hasAccess }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": "true"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a5bebb14-c434-4b6c-b2d6-e628a5bca231",
+      "name": "Has Access POST?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Parse POST Params').first().json.hasBinary }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": "true"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4930a3db-6934-4374-bcd6-cb52df6db829",
+      "name": "Has File?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $('Check Role POST').first().json;\nconst host = params.host;\nconst token = params.token;\nconst uploadUrl = 'https://' + host + '/webhook/upload?token=' + token;\n\nconst html = '<!DOCTYPE html><html lang=\"fr\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Erreur - MON USINE</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:\"Segoe UI\",-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#111827;min-height:100vh;display:flex;align-items:center;justify-content:center}.box{text-align:center;padding:40px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04);max-width:420px}.box h1{color:#dc2626;margin-bottom:12px}.box p{color:#6b7280;margin-bottom:24px}.box a{color:#2563eb;text-decoration:none;padding:12px 24px;border:1px solid #bfdbfe;border-radius:12px;display:inline-block;transition:all 0.2s}.box a:hover{background:#eff6ff;border-color:#2563eb}</style></head><body><div class=\"box\"><h1>Aucun fichier re\\u00e7u</h1><p>Veuillez s\\u00e9lectionner au moins un fichier PDF avant d\\u0027envoyer.</p><a href=\"' + uploadUrl + '\">R\\u00e9essayer</a></div></body></html>';\nreturn [{ json: { html } }];"
+      },
+      "id": "e9af7ce1-4873-4618-9a67-a568867fd325",
+      "name": "Generate No File HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "0f92bfdb-b551-469a-b5a0-1092f80a292d",
+      "name": "Respond No File",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        432,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "let uuid;\ntry {\n  uuid = globalThis.crypto.randomUUID().replace(/-/g, '');\n} catch(e) {\n  uuid = Array.from({length: 32}, () => Math.floor(Math.random()*16).toString(16)).join('');\n}\nconst filename = uuid + '.pdf';\nconst binary = $('Webhook Upload POST').first().binary || {};\nreturn [{ json: { filename, filePath: '/files/uploads/' + filename }, binary }];"
+      },
+      "id": "72a47f83-4790-4693-a3b9-dd8e05608f95",
+      "name": "Prepare File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $('Check Role POST').first().json;\nconst token = params.token;\nconst host = params.host;\nconst homeUrl = 'https://' + host + '/webhook/home?token=' + token;\nconst uploadUrl = 'https://' + host + '/webhook/upload?token=' + token;\n\nconst html = '<!DOCTYPE html><html lang=\"fr\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Succ\\u00e8s - MON USINE</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:\"Segoe UI\",-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#111827;min-height:100vh;display:flex;align-items:center;justify-content:center}.box{text-align:center;padding:40px;max-width:500px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}.icon{font-size:4rem;margin-bottom:20px}.box h1{color:#059669;margin-bottom:12px;font-size:1.5rem}.box p{color:#6b7280;margin-bottom:30px;line-height:1.5}.btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}.btn{display:inline-block;padding:12px 24px;border-radius:12px;text-decoration:none;font-weight:600;font-size:0.95rem;transition:all 0.2s}.btn-primary{background:#059669;color:#fff}.btn-primary:hover{transform:translateY(-2px);box-shadow:0 4px 20px rgba(5,150,105,0.3)}.btn-secondary{background:#eff6ff;border:1px solid #bfdbfe;color:#2563eb}.btn-secondary:hover{background:#dbeafe;border-color:#2563eb}</style></head><body><div class=\"box\"><div class=\"icon\">&#9989;</div><h1>Facture import\\u00e9e avec succ\\u00e8s</h1><p>Le fichier a \\u00e9t\\u00e9 envoy\\u00e9 et sera trait\\u00e9 automatiquement dans les prochaines minutes.</p><div class=\"btns\"><a href=\"' + uploadUrl + '\" class=\"btn btn-primary\">Importer une autre facture</a><a href=\"' + homeUrl + '\" class=\"btn btn-secondary\">Retour \\u00e0 l\\u0027accueil</a></div></div></body></html>';\nreturn [{ json: { html } }];"
+      },
+      "id": "c35fb73a-5c19-4e0f-b2a8-f8ff39c89df4",
+      "name": "Generate Success HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a2b96309-54d8-46a0-883b-3f0b42fa9dc7",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "path": "serve-upload",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b7d8898c-02bf-41c7-89ae-719feffb490e",
+      "name": "Webhook Serve Upload",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -368,
+        832
+      ],
+      "webhookId": "serve-upload-binary"
+    },
+    {
+      "parameters": {
+        "filePath": "={{ $json.filePath }}"
+      },
+      "id": "8eedcf09-80f5-4274-a1de-a6954a833893",
+      "name": "Read PDF",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        48,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $json.filePath }}",
+        "dataPropertyName": "fichier",
+        "options": {
+          "append": false
+        }
+      },
+      "id": "ba873016-893b-4b11-bf77-80002a3f70d1",
+      "name": "Read/Write Files from Disk",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        784,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO uploads (id, nom_fichier, fichier_path, pdf_url, traite, created_at, updated_at)\nVALUES (\n  gen_random_uuid()::text,\n  '{{ $('Prepare File').first().json.filename }}',\n  '{{ $('Prepare File').first().json.filepath || '' }}',\n  '{{ 'http://192.168.1.70:5678/webhook/serve-upload?f=' + $('Prepare File').first().json.filename }}',\n  false,\n  NOW(), NOW()\n)\nRETURNING *",
+        "options": {}
+      },
+      "id": "f04d186d-cf9a-4580-bdd9-53b5fb12d398",
+      "name": "Create Upload Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1248,
+        336
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst f = (query.f || '').trim();\nif (!/^[a-f0-9]{32}\\.pdf$/.test(f)) throw new Error('Invalid filename');\nreturn [{ json: { filePath: '/files/uploads/' + f } }];"
+      },
+      "id": "c83699fc-6d2a-40e0-af18-a99b9b8eb093",
+      "name": "Validate Filename",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/pdf"
+              },
+              {
+                "name": "Content-Disposition",
+                "value": "inline"
+              }
+            ]
+          }
+        }
+      },
+      "id": "1a641aa5-7d95-4ce3-9f4c-91f07c65f1ca",
+      "name": "Respond PDF",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        832
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Upload GET": {
+      "main": [
+        [
+          {
+            "node": "Parse Params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Params": {
+      "main": [
+        [
+          {
+            "node": "Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Search User By Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Redirect GET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search User By Token": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Check Role Permission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Redirect GET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Role Permission": {
+      "main": [
+        [
+          {
+            "node": "Has Access?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Access?": {
+      "main": [
+        [
+          {
+            "node": "Generate Upload Form",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Denied GET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Upload Form": {
+      "main": [
+        [
+          {
+            "node": "Respond Form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Redirect GET": {
+      "main": [
+        [
+          {
+            "node": "Redirect Login GET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Upload POST": {
+      "main": [
+        [
+          {
+            "node": "Parse POST Params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse POST Params": {
+      "main": [
+        [
+          {
+            "node": "Has Token POST?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Token POST?": {
+      "main": [
+        [
+          {
+            "node": "Search User POST",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Redirect POST",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search User POST": {
+      "main": [
+        [
+          {
+            "node": "Token Valid POST?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid POST?": {
+      "main": [
+        [
+          {
+            "node": "Check Role POST",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Redirect POST",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Role POST": {
+      "main": [
+        [
+          {
+            "node": "Has Access POST?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Redirect POST": {
+      "main": [
+        [
+          {
+            "node": "Redirect Login POST",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Access POST?": {
+      "main": [
+        [
+          {
+            "node": "Has File?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Denied POST",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has File?": {
+      "main": [
+        [
+          {
+            "node": "Prepare File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate No File HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate No File HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond No File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Success HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Serve Upload": {
+      "main": [
+        [
+          {
+            "node": "Validate Filename",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read PDF": {
+      "main": [
+        [
+          {
+            "node": "Respond PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Create Upload Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Upload Record": {
+      "main": [
+        [
+          {
+            "node": "Generate Success HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Filename": {
+      "main": [
+        [
+          {
+            "node": "Read PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare File": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-06 14:32:44.575",
+  "updatedAt": "2026-03-24 17:29:07.299",
+  "description": ""
+}

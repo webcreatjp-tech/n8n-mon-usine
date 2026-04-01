@@ -1,0 +1,1057 @@
+{
+  "id": "vNJLdNMfEoU3jaRY",
+  "name": "15-gestion-stock",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 14 - Gestion Stock Volets Roulants\n\n**Webhook:** /stock-scan?bonid=XYZ&token=ABC&action=decrement|increment\n\n**Actions:**\n- `decrement` : retire la quantité produite du stock\n- `increment` : ajoute au stock (réception fournisseur)\n- `view` : consulter le stock d'un produit\n- `list` : liste tous les stocks volets bas\n\n**⚠️ Remplacer avant déploiement:**\n- `tbluVlMVlZGdYFZyl` → ID table Stocks Airtable ✅\n- `tblpBqJXo4t7XUOD2` → ID table LogsStock Airtable ✅\n- `SLACK_WEBHOOK_URL` → URL webhook Slack\n- `ALERT_EMAIL` → email destinataire alertes",
+        "height": 420,
+        "width": 360
+      },
+      "id": "d1dfe400-0cce-4400-a0d4-333ebfbbad61",
+      "name": "⚙️ Configuration",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        480,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "path": "stock-scan",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "9046dd59-f60e-4df2-b7b7-b34f6eabdf3f",
+      "name": "Webhook Stock",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        176,
+        528
+      ],
+      "webhookId": "stock-scan"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst bonId    = query.bonid   || query.bon_id || '';\nconst action   = query.action  || 'view';\nconst token    = query.token   || '';\nconst qte      = parseInt(query.qte || query.quantite || '1', 10) || 1;\nconst operateur = query.operateur || 'system';\nconst produitId = query.produitid || query.produit_id || '';\n\nreturn [{\n  json: {\n    bon_id:    bonId ? decodeURIComponent(bonId) : '',\n    action:    action.toLowerCase().trim(),\n    token,\n    qte,\n    operateur,\n    produit_id: produitId,\n    timestamp: new Date().toISOString(),\n    error: false\n  }\n}];"
+      },
+      "id": "d90c9fd8-3f75-420c-b309-713e73c5a01e",
+      "name": "Parse Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-token",
+              "leftValue": "={{ $json.token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c4f15cc9-c9ba-476a-b1ac-f4790e8305aa",
+      "name": "Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        640,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: false, error: 'Token manquant ou invalide', code: 401}) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "c75b097f-01ec-42b7-8230-ae5eb82bc333",
+      "name": "Error No Token",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        864,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate token against env var\nconst token = $json.token || '';\nconst validToken = $env.STOCK_WEBHOOK_TOKEN || 'ABC';\n\nif (token !== validToken) {\n  return [{ json: { ...($json), valid: false, error: 'Token invalide' } }];\n}\nreturn [{ json: { ...($json), valid: true } }];"
+      },
+      "id": "05b8d972-d9ba-495d-bedb-0a8d5e83c5fb",
+      "name": "Validate Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f1954403-00a9-4bca-8b64-da50defbd7d4",
+      "name": "Token Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: false, error: $json.error || 'Token invalide', code: 403}) }}",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "652be96c-406e-45db-a87e-3d3f82ef8990",
+      "name": "Error Bad Token",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1312,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "action-type",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "list",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e08ab856-3034-4e65-98d8-aecc62e94402",
+      "name": "Action = list?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1312,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM produits WHERE stock_bas = true AND LOWER(categorie) = 'volet roulant' ORDER BY designation",
+        "options": {}
+      },
+      "id": "3849ed21-4181-4c57-9221-2be1cd61b00d",
+      "name": "List Low Stocks",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1520,
+        208
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst stocks = items.map(item => {\n  const f = item.json.fields || {};\n  return {\n    id: item.json.id,\n    designation: f.Designation || f['Designation (from ProduitID)']?.[0] || 'N/A',\n    categorie: f.Categorie || f['Categorie (from ProduitID)']?.[0] || 'N/A',\n    quantite: f.QuantiteDisponible ?? 0,\n    seuil: f.SeuilMin ?? 2,\n    emplacement: f.Emplacement || 'N/A',\n    dernier_mvt: f.DernierMvt || null,\n    alerte: f.StockAlerte || '⚠️ BAS'\n  };\n});\n\nreturn [{\n  json: {\n    success: true,\n    action: 'list',\n    count: stocks.length,\n    stocks,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "63c68603-72ff-4122-81d0-7bb0238829bf",
+      "name": "Format List Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "e79a4fb8-7b65-4fb5-9f70-4add6eaa7d3c",
+      "name": "Respond List",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1968,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-bon",
+              "leftValue": "={{ $json.bon_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1200bf33-7bb2-4512-a96d-f9e2775d7fb9",
+      "name": "Has Bon ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: false, error: 'bonid requis pour action ' + $json.action, code: 400}) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "e82e8f4f-0565-4904-85ae-7956611569b5",
+      "name": "Error No Bon",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1744,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM produits WHERE produit_id = '{{ $json.bon_id }}'",
+        "options": {}
+      },
+      "id": "9778bbdf-3e38-4f64-b8e6-fe77c1741ee0",
+      "name": "Get Produit from Airtable",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1744,
+        480
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge produit data with scan params\nconst scan = $('Has Bon ID?').first().json;\nconst produitItem = $input.first();\nconst produit = produitItem?.json?.fields || produitItem?.json || {};\nconst produitId = produitItem?.json?.id || '';\n\nif (!produitId) {\n  return [{ json: {\n    ...scan,\n    found: false,\n    error: `Produit non trouvé pour bon_id: ${scan.bon_id}`\n  }}];\n}\n\nconst categorie = produit.Categorie || '';\nconst isVolet = categorie.toLowerCase().includes('volet');\n\nreturn [{ json: {\n  ...scan,\n  found: true,\n  produit_record_id: produitId,\n  designation: produit.Designation || 'N/A',\n  categorie,\n  is_volet: isVolet,\n  quantite_produit: produit.Quantite || scan.qte || 1,\n  statut_prod: produit.statut_production || 'N/A',\n  statut_val: produit.statut_validation || 'N/A'\n}}];"
+      },
+      "id": "4679630e-b3aa-42d1-9372-e65f3e4abcf5",
+      "name": "Merge Produit Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-volet",
+              "leftValue": "={{ $json.is_volet }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            },
+            {
+              "id": "is-found",
+              "leftValue": "={{ $json.found }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e0d4603c-e11e-4869-87cf-79f35c225e8f",
+      "name": "Est Volet Roulant?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2192,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: false, error: $json.error || ('Produit non volet roulant: ' + $json.categorie), code: 422, bon_id: $json.bon_id, designation: $json.designation}) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "f7cd43cd-6ab2-42c3-b84e-c842d3e40dc5",
+      "name": "Error Not Volet",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2400,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM produits WHERE id = '{{ $json.produit_record_id }}'",
+        "options": {}
+      },
+      "id": "3d48a716-435e-4e91-8863-f0eeea49193a",
+      "name": "Get Stock Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2400,
+        480
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const scan = $('Est Volet Roulant?').first().json;\nconst stockItem = $input.first();\nconst stockFields = stockItem?.json?.fields || {};\nconst stockRecordId = stockItem?.json?.id || null;\n\nconst qteActuelle = stockFields.QuantiteDisponible ?? 0;\nconst seuilMin = stockFields.SeuilMin ?? 2;\nconst action = scan.action;\nconst delta = parseInt(scan.quantite_produit || scan.qte || 1, 10);\n\nlet nouvelleQte;\nif (action === 'decrement') {\n  nouvelleQte = Math.max(0, qteActuelle - delta);\n} else if (action === 'increment') {\n  nouvelleQte = qteActuelle + delta;\n} else {\n  // 'view' only\n  nouvelleQte = qteActuelle;\n}\n\nconst stockBas = nouvelleQte < seuilMin;\n\nreturn [{ json: {\n  ...scan,\n  stock_record_id: stockRecordId,\n  stock_avant: qteActuelle,\n  stock_apres: nouvelleQte,\n  seuil_min: seuilMin,\n  delta,\n  stock_bas: stockBas,\n  emplacement: stockFields.Emplacement || 'Atelier',\n  needs_update: action === 'decrement' || action === 'increment',\n  designation_stock: stockFields.Designation?.[0] || scan.designation || 'N/A'\n}}];"
+      },
+      "id": "2befb019-3cc3-4901-b0f5-6c9b4a605468",
+      "name": "Calcul Nouveau Stock",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2624,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "needs-update",
+              "leftValue": "={{ $json.needs_update }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            },
+            {
+              "id": "has-record",
+              "leftValue": "={{ $json.stock_record_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7d0fd7b5-a289-4635-8f3e-424bd5302cb0",
+      "name": "Needs Update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2848,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE produits SET quantite = {{ $json.stock_apres }}, updated_at = NOW() WHERE id = '{{ $json.id }}' RETURNING *",
+        "options": {}
+      },
+      "id": "ad703f4a-bdab-48cd-bbf6-119de38740de",
+      "name": "Update Stock Airtable",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3072,
+        320
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO produits (id, produit_id, designation, categorie, quantite, notes, created_at, updated_at) VALUES (gen_random_uuid()::text, '{{ $json.bon_id }}', 'MVT:{{ $json.action }}|Delta:{{ $json.delta }}', 'log_mouvement', {{ $json.stock_apres }}, 'Avant:{{ $json.stock_avant }}|Apres:{{ $json.stock_apres }}|Op:{{ $json.operateur }}', NOW(), NOW()) RETURNING *",
+        "options": {}
+      },
+      "id": "19e5378c-555d-437f-8f66-bedb4e34554f",
+      "name": "Log Mouvement",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3072,
+        480
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "stock-bas",
+              "leftValue": "={{ $json.stock_bas }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3110dd13-28c0-49ed-93ad-265b3d9d512f",
+      "name": "Stock Bas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3280,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Calcul Nouveau Stock').first().json;\nconst msg = `🚨 *ALERTE STOCK BAS* — Volet Roulant\\n` +\n  `📦 *${data.designation_stock}*\\n` +\n  `Stock actuel : *${data.stock_apres}* restants\\n` +\n  `Seuil minimum : ${data.seuil_min}\\n` +\n  `Emplacement : ${data.emplacement}\\n` +\n  `Mouvement : ${data.action} de ${data.delta} unité(s)\\n` +\n  `Bon prod : ${data.bon_id}\\n` +\n  `Timestamp : ${new Date(data.timestamp).toLocaleString('fr-FR')}\\n\\n` +\n  `👉 Lancer réapprovisionnement`;\n\nconst emailBody = `<h2>⚠️ Alerte Stock Bas — Volet Roulant</h2>\\n` +\n  `<table border='1' cellpadding='8' style='border-collapse:collapse'>\\n` +\n  `<tr><th>Désignation</th><td>${data.designation_stock}</td></tr>\\n` +\n  `<tr><th>Stock actuel</th><td><strong style='color:red'>${data.stock_apres}</strong></td></tr>\\n` +\n  `<tr><th>Seuil minimum</th><td>${data.seuil_min}</td></tr>\\n` +\n  `<tr><th>Emplacement</th><td>${data.emplacement}</td></tr>\\n` +\n  `<tr><th>Mouvement</th><td>${data.action} × ${data.delta}</td></tr>\\n` +\n  `<tr><th>Bon production</th><td>${data.bon_id}</td></tr>\\n` +\n  `</table>\\n` +\n  `<p><em>Réapprovisionner auprès du fournisseur.</em></p>`;\n\nreturn [{ json: {\n  ...data,\n  slack_msg: msg,\n  email_body: emailBody,\n  email_subject: `Réappro volet ${data.designation_stock} : ${data.stock_apres} restants`\n}}];"
+      },
+      "id": "fbc1d2f4-01aa-49f3-b484-f17326d1044f",
+      "name": "Préparer Message Alerte",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3504,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_STOCK || 'https://hooks.slack.com/services/VOTRE/WEBHOOK/SLACK' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.slack_msg }}"
+            },
+            {
+              "name": "channel",
+              "value": "#stock-alertes"
+            },
+            {
+              "name": "username",
+              "value": "Mon Usine Stock Bot"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "46fd97ce-7528-48c7-a277-34abbb669c8c",
+      "name": "Slack Alerte Stock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3728,
+        208
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "28d75050-04ba-4c53-a0a7-b90b96158351",
+      "name": "Telegram Alerte Stock",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4000,
+        -64
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "8471849130",
+        "text": "={{ $('Préparer Message Alerte').first().json.message || '🚨 Stock bas' }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "5IqF446S7446SmUc",
+          "name": "agent"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate update + log results into final response\nconst calc = $('Calcul Nouveau Stock').first().json;\n\nreturn [{ json: {\n  success: true,\n  action: calc.action,\n  bon_id: calc.bon_id,\n  designation: calc.designation_stock,\n  categorie: calc.categorie,\n  stock_avant: calc.stock_avant,\n  stock_apres: calc.stock_apres,\n  seuil_min: calc.seuil_min,\n  stock_bas: calc.stock_bas,\n  alerte: calc.stock_bas ? `⚠️ Réappro volet ${calc.designation_stock} : ${calc.stock_apres} restants` : null,\n  emplacement: calc.emplacement,\n  timestamp: calc.timestamp\n}}];"
+      },
+      "id": "a88ee025-f0d5-42dc-aa65-e5eb2f108024",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3952,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json; charset=utf-8"
+              },
+              {
+                "name": "X-Stock-Status",
+                "value": "={{ $json.stock_bas ? 'LOW' : 'OK' }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ac695c63-bc71-49a9-bf9a-60cda8f00d73",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        4160,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// View-only response (no update)\nconst calc = $json;\nreturn [{ json: {\n  success: true,\n  action: 'view',\n  bon_id: calc.bon_id,\n  designation: calc.designation_stock,\n  categorie: calc.categorie,\n  stock_actuel: calc.stock_avant,\n  seuil_min: calc.seuil_min,\n  stock_bas: calc.stock_bas,\n  emplacement: calc.emplacement,\n  timestamp: calc.timestamp\n}}];"
+      },
+      "id": "9fbb51da-aebe-4d10-8398-9c4351d3529d",
+      "name": "View Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3072,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "b189a773-e003-475b-8c39-173eb5a57748",
+      "name": "Respond View",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3280,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error handler: capture and return structured error\nconst err = $input.first();\nconst errMsg = err?.json?.error?.message || err?.json?.message || 'Erreur interne';\nreturn [{ json: {\n  success: false,\n  error: errMsg,\n  code: 500,\n  timestamp: new Date().toISOString()\n}}];"
+      },
+      "id": "09bd5af0-5fb3-4366-8dd8-6f103181bd3e",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3280,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "20cabf7d-f953-4479-88ef-8d76eee1056d",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3504,
+        800
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Stock": {
+      "main": [
+        [
+          {
+            "node": "Parse Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Parameters": {
+      "main": [
+        [
+          {
+            "node": "Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Validate Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error No Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Token": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Action = list?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Bad Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action = list?": {
+      "main": [
+        [
+          {
+            "node": "List Low Stocks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Bon ID?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Low Stocks": {
+      "main": [
+        [
+          {
+            "node": "Format List Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format List Response": {
+      "main": [
+        [
+          {
+            "node": "Respond List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Bon ID?": {
+      "main": [
+        [
+          {
+            "node": "Get Produit from Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error No Bon",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Produit from Airtable": {
+      "main": [
+        [
+          {
+            "node": "Merge Produit Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Produit Data": {
+      "main": [
+        [
+          {
+            "node": "Est Volet Roulant?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Est Volet Roulant?": {
+      "main": [
+        [
+          {
+            "node": "Get Stock Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Not Volet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Stock Record": {
+      "main": [
+        [
+          {
+            "node": "Calcul Nouveau Stock",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcul Nouveau Stock": {
+      "main": [
+        [
+          {
+            "node": "Needs Update?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Update?": {
+      "main": [
+        [
+          {
+            "node": "Update Stock Airtable",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Mouvement",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "View Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Stock Airtable": {
+      "main": [
+        [
+          {
+            "node": "Stock Bas?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stock Bas?": {
+      "main": [
+        [
+          {
+            "node": "Préparer Message Alerte",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer Message Alerte": {
+      "main": [
+        [
+          {
+            "node": "Slack Alerte Stock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Alerte Stock": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "View Response": {
+      "main": [
+        [
+          {
+            "node": "Respond View",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Handler": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {},
+  "createdAt": "2026-03-06 14:34:30.429",
+  "updatedAt": "2026-03-24 18:50:21.840",
+  "description": ""
+}

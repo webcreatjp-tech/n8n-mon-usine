@@ -1,0 +1,503 @@
+{
+  "id": "6t8tJlonHzAi9DYD",
+  "name": "01  Extraction Factures PDF + QR Code",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extraction",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -2000,
+        -256
+      ],
+      "id": "871c27ed-825e-4a06-a28e-6d3f4acde4b5",
+      "name": "Webhook Extraction",
+      "webhookId": "34818f66-e94e-41af-abd2-35684f36aa24"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM factures WHERE pdf_original = '{{ $(\"Load Context\").first().json.pdfUrl }}'",
+        "options": {}
+      },
+      "id": "5eebe7e6-af26-464b-be56-307ea29786b8",
+      "name": "Search Created Invoice",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        240,
+        -256
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM produits WHERE (qr_code IS NULL OR qr_code = '') AND (produit_id IS NULL OR produit_id = '') ORDER BY created_at ASC",
+        "options": {}
+      },
+      "id": "c32b9f08-8477-45a5-b2d9-8e174628743f",
+      "name": "Get Products Without QR",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        464,
+        -256
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c02c4a16-8bc7-4c08-8725-35474727768a",
+      "name": "Has Products?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        688,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// MAXIMUM VALIDATION ENGINE v3 — Fixed dimension mapping\n// Store/Rentoilage: dims = Largeur × avancée. Surface = L×A\n// Volet/Moustiquaire: dims = Largeur × Hauteur\n// Lambrequin: Largeur + Hauteur (tombée)\n\nconst items = $input.all();\nconst results = [];\n\n// ─── Categories that use avancée as 2nd dimension ───\nconst AVANCEE_CATS = ['Store banne', 'Rentoilage', 'Rentoilage double pente'];\nconst HAUTEUR_CATS = ['Volet roulant', 'Moustiquaire', 'Lambrequin'];\nconst SURFACE_CATS = ['Store banne', 'Rentoilage', 'Rentoilage double pente']; // Surface = L×A\n\n// ─── MANDATORY FIELDS BY CATEGORY ───\nconst MANDATORY = {\n  'Store banne': ['Largeur_mm', 'avancée', 'Surface_m2', 'Couleur_toile', 'Couleur_armature', 'Moteur', 'Forme_lambrequin', 'Jonc_haut', 'Jonc_bas'],\n  'Lambrequin': ['Largeur_mm', 'Hauteur_mm', 'Couleur_toile', 'Forme_lambrequin'],\n  'Rentoilage': ['Largeur_mm', 'avancée', 'Couleur_toile'],\n  'Rentoilage double pente': ['Largeur_mm', 'avancée', 'Couleur_toile'],\n  'Volet roulant': ['Largeur_mm', 'Hauteur_mm', 'Moteur', 'Couleur_armature'],\n  'Moustiquaire': ['Largeur_mm', 'Hauteur_mm', 'Couleur_toile'],\n  'Parasol': ['Designation'],\n  'Composant': ['Designation']\n};\n\n// ─── DIMENSION RANGES BY CATEGORY (mm) ───\nconst DIM_RANGES = {\n  'Store banne':   { lMin: 1500, lMax: 7000, aMin: 1500, aMax: 4500, hMin: 0, hMax: 500 },\n  'Lambrequin':    { lMin: 500,  lMax: 15000, hMin: 100, hMax: 1500 },\n  'Rentoilage':    { lMin: 1000, lMax: 7000, aMin: 1000, aMax: 4500 },\n  'Rentoilage double pente': { lMin: 1000, lMax: 7000, aMin: 1000, aMax: 4500 },\n  'Volet roulant': { lMin: 400,  lMax: 4000, hMin: 400,  hMax: 3500 },\n  'Moustiquaire':  { lMin: 400,  lMax: 3000, hMin: 400,  hMax: 3000 },\n  'Parasol':       {},\n  'Composant':     {}\n};\n\n// ─── OCR CATEGORY CORRECTIONS ───\nconst OCR_CAT_FIXES = {\n  'store banne': 'Store banne', 'store-banne': 'Store banne', 'storebanne': 'Store banne',\n  'store bane': 'Store banne', 'store banné': 'Store banne',\n  'lambrequin': 'Lambrequin', 'lamberquin': 'Lambrequin', 'lambroquin': 'Lambrequin',\n  'volet roulant': 'Volet roulant', 'volet-roulant': 'Volet roulant',\n  'moustiquaire': 'Moustiquaire', 'moustiqaire': 'Moustiquaire',\n  'rentoilage': 'Rentoilage', 'rentoillage': 'Rentoilage', 're-toilage': 'Rentoilage',\n  'rentoilage double pente': 'Rentoilage double pente',\n  'parasol': 'Parasol', 'parrasol': 'Parasol',\n  'composant': 'Composant', 'accessoire': 'Composant', 'pièce': 'Composant'\n};\n\nconst FABRIC_BRANDS = ['dickson', 'orchestra', 'sunworker', 'sattler', 'sunbrella', 'para', 'tempotest', 'recacril', 'docril'];\nconst MOTOR_BRANDS = ['somfy', 'nice', 'came', 'bubendorff', 'simu', 'becker', 'asa', 'gaposa', 'mottura'];\n\nfor (const item of items) {\n  const f = item.json.fields || item.json;\n  const notes = [];\n  const corrections = {};\n\n  // ─── 1. CATEGORY CORRECTION ───\n  let cat = (f.Categorie || '').trim();\n  const catLower = cat.toLowerCase();\n  if (OCR_CAT_FIXES[catLower] && OCR_CAT_FIXES[catLower] !== cat) {\n    corrections.Categorie = OCR_CAT_FIXES[catLower];\n    cat = OCR_CAT_FIXES[catLower];\n    notes.push('Catégorie corrigée → ' + cat);\n  }\n  if (!MANDATORY[cat]) {\n    notes.push('⚠ Catégorie inconnue: \"' + cat + '\"');\n    cat = 'Parasol';\n  }\n\n  // ─── 2. DIMENSION SWAP DETECTION ───\n  // If AI put the 2nd dimension in wrong field, fix it\n  const largeur = Number(f.Largeur_mm) || 0;\n  const hauteur = Number(f.Hauteur_mm) || 0;\n  const avancee = Number(f.avancée) || Number(f['avancée']) || 0;\n\n  if (AVANCEE_CATS.includes(cat)) {\n    // For stores/rentoilages: 2nd dim should be in avancée, NOT Hauteur_mm\n    if (hauteur > 500 && avancee === 0) {\n      // AI probably put avancée in Hauteur_mm by mistake\n      corrections.avancée = hauteur;\n      corrections.Hauteur_mm = 0; // Clear wrong value (or leave for lambrequin height)\n      notes.push('Dimension corrigée: Hauteur_mm(' + hauteur + ') → avancée (store/rentoilage)');\n    }\n    // If both hauteur and avancée are set, hauteur should be small (lambrequin height)\n    if (hauteur > 500 && avancee > 0) {\n      notes.push('⚠ Hauteur_mm=' + hauteur + ' élevée pour ' + cat + ' (devrait être hauteur lambrequin ≤500mm ou vide)');\n    }\n  }\n\n  if (HAUTEUR_CATS.includes(cat)) {\n    // For volets/moustiquaires: 2nd dim should be in Hauteur_mm\n    if (avancee > 0 && hauteur === 0) {\n      // AI probably put hauteur in avancée by mistake\n      corrections.Hauteur_mm = avancee;\n      corrections.avancée = 0;\n      notes.push('Dimension corrigée: avancée(' + avancee + ') → Hauteur_mm (volet/moustiquaire)');\n    }\n  }\n\n  // ─── 3. MANDATORY FIELD CHECK ───\n  const mandatory = MANDATORY[cat] || MANDATORY['Parasol'];\n  const missingFields = [];\n  for (const field of mandatory) {\n    let val = f[field];\n    // Check if a correction fills this field\n    if (corrections[field] !== undefined && corrections[field] !== 0) val = corrections[field];\n    if (val === undefined || val === null || val === '' || val === 0) {\n      missingFields.push(field);\n    }\n  }\n\n  // ─── 4. DIMENSION SANITY CHECKS ───\n  const effLargeur = corrections.Largeur_mm || largeur;\n  const effAvancee = corrections.avancée || avancee;\n  const effHauteur = corrections.Hauteur_mm !== undefined ? corrections.Hauteur_mm : hauteur;\n  const range = DIM_RANGES[cat] || {};\n\n  // Largeur checks\n  if (effLargeur > 0 && effLargeur < 100 && cat !== 'Parasol') {\n    corrections.Largeur_mm = effLargeur * 10;\n    notes.push('Largeur probablement en cm → ' + (effLargeur * 10) + 'mm');\n  } else if (effLargeur > 0 && range.lMin && effLargeur < range.lMin) {\n    notes.push('⚠ Largeur petite: ' + effLargeur + 'mm (min: ' + range.lMin + ')');\n  } else if (effLargeur > 0 && range.lMax && effLargeur > range.lMax) {\n    notes.push('⚠ Largeur grande: ' + effLargeur + 'mm (max: ' + range.lMax + ')');\n  }\n\n  // Avancée checks (for store/rentoilage)\n  if (AVANCEE_CATS.includes(cat) && effAvancee > 0) {\n    if (effAvancee < 100) {\n      corrections.avancée = effAvancee * 10;\n      notes.push('Avancée probablement en cm → ' + (effAvancee * 10) + 'mm');\n    } else if (range.aMin && effAvancee < range.aMin) {\n      notes.push('⚠ Avancée petite: ' + effAvancee + 'mm (min: ' + range.aMin + ')');\n    } else if (range.aMax && effAvancee > range.aMax) {\n      notes.push('⚠ Avancée grande: ' + effAvancee + 'mm (max: ' + range.aMax + ')');\n    }\n    // Avancée should not exceed Largeur for stores\n    if (effAvancee > 0 && effLargeur > 0 && effAvancee > effLargeur) {\n      notes.push('⚠ Avancée(' + effAvancee + ') > Largeur(' + effLargeur + '), vérifier');\n    }\n  }\n\n  // Hauteur checks (for volet/moustiquaire)\n  if (HAUTEUR_CATS.includes(cat) && effHauteur > 0) {\n    if (effHauteur < 100) {\n      corrections.Hauteur_mm = effHauteur * 10;\n      notes.push('Hauteur probablement en cm → ' + (effHauteur * 10) + 'mm');\n    } else if (range.hMin && effHauteur < range.hMin) {\n      notes.push('⚠ Hauteur petite: ' + effHauteur + 'mm (min: ' + range.hMin + ')');\n    } else if (range.hMax && effHauteur > range.hMax) {\n      notes.push('⚠ Hauteur grande: ' + effHauteur + 'mm (max: ' + range.hMax + ')');\n    }\n  }\n\n  // ─── 5. SURFACE_m2 CALCULATION (L × A for stores, not L × H!) ───\n  let surface = Number(f.Surface_m2) || 0;\n  const finalLargeur = corrections.Largeur_mm || effLargeur;\n  const finalAvancee = corrections.avancée || effAvancee;\n  const finalHauteur = corrections.Hauteur_mm !== undefined ? corrections.Hauteur_mm : effHauteur;\n\n  if (SURFACE_CATS.includes(cat)) {\n    // Surface = Largeur × avancée\n    if (finalLargeur > 0 && finalAvancee > 0) {\n      const calc = Math.round((finalLargeur * finalAvancee / 1000000) * 100) / 100;\n      if (surface === 0) {\n        corrections.Surface_m2 = calc;\n        surface = calc;\n        notes.push('Surface_m2 calculée (L×A): ' + calc);\n        const idx = missingFields.indexOf('Surface_m2');\n        if (idx >= 0) missingFields.splice(idx, 1);\n      } else if (Math.abs(surface - calc) > 0.5) {\n        notes.push('⚠ Surface incohérente: ' + surface + ' vs L×A=' + calc);\n      }\n    }\n  }\n\n  // ─── 6. PRICE VALIDATION ───\n  const prixUnitHT = Number(f.Prix_unitaire_HT) || 0;\n  const prixTotalTTC = Number(f.Prix_total_TTC) || 0;\n  const quantite = Number(f.Quantite) || 1;\n\n  if (prixUnitHT > 0 && prixTotalTTC > 0) {\n    const expectedTTC = prixUnitHT * quantite * 1.20;\n    if (Math.abs(prixTotalTTC - expectedTTC) / expectedTTC > 0.15) {\n      notes.push('⚠ Prix TTC(' + prixTotalTTC + ') ≠ PU×Qté×1.20(' + expectedTTC.toFixed(2) + ')');\n    }\n  }\n  if (prixUnitHT > 50000) notes.push('⚠ Prix unitaire HT très élevé: ' + prixUnitHT);\n  if (prixTotalTTC > 0 && prixTotalTTC < 10) notes.push('⚠ Prix total TTC très bas: ' + prixTotalTTC);\n\n  // ─── 7. FORMAT VALIDATION ───\n  const couleurArm = (f.Couleur_armature || '').trim();\n  const couleurToile = (f.Couleur_toile || '').trim();\n  const moteur = (f.Moteur || '').trim();\n\n  if (couleurArm && !couleurArm.toLowerCase().includes('ral') && cat !== 'Parasol' && couleurArm.length > 2) {\n    notes.push('Info: Armature sans code RAL: \"' + couleurArm + '\"');\n  }\n  if (couleurToile && couleurToile.length > 2) {\n    const hasKnownBrand = FABRIC_BRANDS.some(b => couleurToile.toLowerCase().includes(b));\n    if (!hasKnownBrand && cat !== 'Moustiquaire' && cat !== 'Volet roulant') {\n      notes.push('Info: Toile sans marque connue: \"' + couleurToile + '\"');\n    }\n  }\n  if (moteur && moteur.length > 2) {\n    const hasKnownMotor = MOTOR_BRANDS.some(b => moteur.toLowerCase().includes(b));\n    if (!hasKnownMotor) notes.push('Info: Moteur marque non reconnue: \"' + moteur + '\"');\n  }\n\n  // ─── 8. CLEAN N/A VALUES ───\n  for (const [key, val] of Object.entries(f)) {\n    if (typeof val === 'string' && /^(n\\/a|non\\s*(spécifié|disponible|précisé)|null|undefined|none)$/i.test(val.trim())) {\n      corrections[key] = '';\n      notes.push('Nettoyé \"' + val + '\" → vide pour ' + key);\n    }\n  }\n\n  // ─── 9. QUANTITE CHECK ───\n  if (quantite <= 0) {\n    corrections.Quantite = 1;\n    notes.push('Quantité corrigée: 0 → 1');\n  }\n\n  // ─── 10. COMPUTE CONFIDENCE SCORE ───\n  const aiScore = Number(f.confidence_score) || 0;\n  const totalMandatory = mandatory.length;\n  const foundCount = totalMandatory - missingFields.length;\n  const fieldScore = totalMandatory > 0 ? Math.round((foundCount / totalMandatory) * 100) : 100;\n  const warningCount = notes.filter(n => n.startsWith('⚠')).length;\n  const warningPenalty = Math.min(warningCount * 5, 25);\n\n  let finalScore;\n  if (aiScore > 0) {\n    finalScore = Math.round((aiScore * 0.4 + fieldScore * 0.4 + (100 - warningPenalty) * 0.2));\n  } else {\n    finalScore = Math.round(fieldScore * 0.7 + (100 - warningPenalty) * 0.3);\n  }\n  finalScore = Math.max(0, Math.min(100, finalScore));\n\n  const statutValidation = finalScore >= 85 ? 'En attente' : 'À réviser';\n\n  if (missingFields.length > 0) {\n    notes.unshift('Champs manquants: ' + missingFields.join(', '));\n  }\n\n  const aiNotes = (f.validation_notes || '').trim();\n  const allNotes = aiNotes ? [aiNotes, ...notes] : notes;\n\n  results.push({\n    json: {\n      ...item.json,\n      _validation: {\n        confidence_score: finalScore,\n        validation_notes: allNotes.join('; ').substring(0, 255),\n        statut_validation: statutValidation,\n        Surface_m2_calculated: corrections.Surface_m2 || surface || 0,\n        category_corrected: corrections.Categorie || cat,\n        avancee_corrected: corrections.avancée || 0,\n        hauteur_corrected: corrections.Hauteur_mm !== undefined ? corrections.Hauteur_mm : 0,\n        largeur_corrected: corrections.Largeur_mm || 0,\n        quantite_corrected: corrections.Quantite || 0,\n        warning_count: warningCount,\n        missing_count: missingFields.length\n      }\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        -64
+      ],
+      "id": "060a0a6a-172b-4343-a50e-c04157e7dbd0",
+      "name": "Validate Products"
+    },
+    {
+      "parameters": {
+        "jsCode": "const BASE_WEBHOOK_URL = 'http://192.168.1.70:5678/webhook';\nconst items = $input.all();\nconst results = [];\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  const fields = item.json.fields || item.json;\n  const recordId = item.json.id;\n  const factureNum = fields['Numéro (from Facture_liee)']?.[0] || 'BP';\n  const shortId = recordId.replace('rec', '').slice(0, 6).toUpperCase();\n  const bonId = factureNum + '-' + shortId;\n  const productionUrl = BASE_WEBHOOK_URL + '/production?bon_id=' + encodeURIComponent(bonId);\n  const qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&format=png&data=' + encodeURIComponent(productionUrl);\n  results.push({ json: { ...item.json, bon_id: bonId, production_url: productionUrl, qr_code_url: qrCodeUrl, record_id: recordId } });\n}\nreturn results;"
+      },
+      "id": "d36ea81a-9b31-4142-bc5c-bb282089b09f",
+      "name": "Generate bon_id & QR URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE produits SET produit_id = '{{ $json.bon_id }}', qr_code = '{{ $json.qr_code_url }}', statut_validation = '{{ $json._validation ? $json._validation.statut_validation : ($json.statut_validation || \"\") }}', notes = '{{ $json._validation ? $json._validation.validation_notes : ($json.validation_notes || \"\") }}', updated_at = NOW() WHERE id = '{{ $json.id }}' RETURNING *",
+        "options": {}
+      },
+      "id": "150dde6e-a792-4c9b-82a7-35bf05c695ca",
+      "name": "Update Product with QR",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1392,
+        -64
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { _done: true, _ts: Date.now() } }];"
+      },
+      "id": "9c849cc1-89f4-45f7-a725-f698936e1be9",
+      "name": "Done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1584,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst d = item.json.body || item.json;\n$execution.customData.set('pdfUrl', d.pdfUrl || '');\n$execution.customData.set('driveFileId', d.driveFileId || '');\n$execution.customData.set('factureNum', d.factureNum || '');\n$execution.customData.set('pdfId', d.pdfId || '');\nreturn [{ json: { pdfUrl: d.pdfUrl || '', pdfText: d.pdfText || '', pdfId: d.pdfId || '', factureNum: d.factureNum || '', driveFileId: d.driveFileId || '' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1776,
+        -256
+      ],
+      "id": "dadd39fd-0c56-4573-b9b7-e4945048fb42",
+      "name": "Save Context"
+    },
+    {
+      "parameters": {
+        "jsCode": "const pdfUrl = $execution.customData.get('pdfUrl') || '';\nlet driveFileId = $execution.customData.get('driveFileId') || '';\nif (!driveFileId && pdfUrl) {\n  const m = pdfUrl.match(/\\/file\\/d\\/([^/]+)/);\n  if (m) driveFileId = m[1];\n}\nconst factureNum = $execution.customData.get('factureNum') || '';\nconst pdfId = $execution.customData.get('pdfId') || '';\nreturn [{ json: { pdfUrl, driveFileId, factureNum, pdfId } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        -256
+      ],
+      "id": "4ef98a1d-fa7e-4fa3-8187-802c25f41860",
+      "name": "Load Context"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst item = $input.first();\nconst d = item.json.body || item.json;\nconst pdfUrl = d.pdfUrl || $execution.customData.get('pdfUrl') || '';\nconst pdfText = d.pdfText || '';\n\nconst systemPrompt = \"Tu es un expert en extraction de factures MON USINE. Tu extrais des donn\\u00e9es de factures PDF de stores bannes, volets roulants et produits similaires. IMPORTANT: Tu DOIS utiliser les outils disponibles dans l'ordre strict.\\nCRITIQUE: Appelle les outils UN PAR UN. Attends la R\\u00c9PONSE de chaque outil avant d'appeler le suivant.\\nChaque outil retourne un objet JSON avec un champ \\\"id\\\" (commence par \\\"rec\\\" suivi de 14 caract\\u00e8res). Tu DOIS r\\u00e9utiliser cet id r\\u00e9el dans les appels suivants.\\n\\n## R\\u00c8GLE DIMENSIONS CRITIQUE \\u2014 LIRE ATTENTIVEMENT\\n\\nSur les factures, les dimensions sont not\\u00e9es LARGEURxSECONDE_DIM (ex: 4000x3000mm).\\nLa SIGNIFICATION de la seconde dimension D\\u00c9PEND de la cat\\u00e9gorie:\\n\\n| Cat\\u00e9gorie | 1\\u00e8re dim | 2\\u00e8me dim | Surface_m2 |\\n|-----------|----------|----------|------------|\\n| **Store banne** | Largeur_mm | **avanc\\u00e9e** (projection) | Largeur \\u00d7 avanc\\u00e9e / 1000000 |\\n| **Rentoilage** | Largeur_mm | **avanc\\u00e9e** (tomb\\u00e9e toile) | Largeur \\u00d7 avanc\\u00e9e / 1000000 |\\n| **Rentoilage double pente** | Largeur_mm | **avanc\\u00e9e** | Largeur \\u00d7 avanc\\u00e9e / 1000000 |\\n| **Lambrequin** | Largeur_mm | **Hauteur_mm** (tomb\\u00e9e) | _(pas de surface)_ |\\n| **Volet roulant** | Largeur_mm | **Hauteur_mm** | _(pas de surface)_ |\\n| **Moustiquaire** | Largeur_mm | **Hauteur_mm** | _(pas de surface)_ |\\n| **Parasol** | _(variable)_ | _(variable)_ | _(pas de surface)_ |\\n\\n\\u26a0 Pour Store banne et Rentoilage: la 2\\u00e8me dimension va dans **avanc\\u00e9e**, PAS dans Hauteur_mm.\\n\\u26a0 Hauteur_mm pour un store banne = hauteur du lambrequin OU laisser vide si non pr\\u00e9cis\\u00e9.\\n\\u26a0 Pour un Lambrequin seul: Hauteur_mm = tomb\\u00e9e/drop du lambrequin (hauteur de la bande).\\n\\u26a0 Les lambrequins sur-mesure peuvent aller de 100mm \\u00e0 1500mm de hauteur (les plus courants: 150-350mm).\\n\\n## EXEMPLES CONCRETS D'EXTRACTION\\n\\n### Exemple 1: Store Banne (le plus courant)\\nTexte: \\\"Store Banne Monobloc 4000x3000mm - Toile Dickson Orchestra 6688 Gris - Armature Anthracite RAL 7016 - Moteur Somfy Sunea IO - Lambrequin Droit 200mm - Jonc haut Standard - Jonc bas Standard - Capteur vent Eolis IO\\\"\\n\\u2192 Designation: \\\"Store Banne Monobloc 4000x3000\\\"\\n\\u2192 Categorie: \\\"Store banne\\\"\\n\\u2192 Largeur_mm: 4000, avanc\\u00e9e: 3000, Hauteur_mm: 200 (hauteur lambrequin), Surface_m2: 12.00\\n\\u2192 Couleur_toile: \\\"Dickson Orchestra 6688 Gris\\\", Couleur_armature: \\\"Anthracite RAL 7016\\\"\\n\\u2192 Moteur: \\\"Somfy Sunea IO\\\", Forme_lambrequin: \\\"Droit\\\", Jonc_haut: \\\"Standard\\\", Jonc_bas: \\\"Standard\\\"\\n\\u2192 Capteur_vent: \\\"Eolis IO\\\", confidence_score: 95\\n\\n### Exemple 2: Volet Roulant (dimensions = Largeur \\u00d7 Hauteur)\\nTexte: \\\"Volet Roulant Alu 1200x1800 - Blanc RAL 9010 - Moteur Somfy Oximo 50 TS - Commande radio Smoove Origin\\\"\\n\\u2192 Designation: \\\"Volet Roulant Alu 1200x1800\\\"\\n\\u2192 Categorie: \\\"Volet roulant\\\"\\n\\u2192 Largeur_mm: 1200, Hauteur_mm: 1800 (\\u26a0 ici c'est bien Hauteur, pas avanc\\u00e9e)\\n\\u2192 Couleur_armature: \\\"Blanc RAL 9010\\\", Moteur: \\\"Somfy Oximo 50 TS\\\"\\n\\u2192 Type_commande: \\\"Radio\\\", Options_supplementaires: \\\"Smoove Origin\\\"\\n\\u2192 confidence_score: 90\\n\\n### Exemple 3: Lambrequin seul (Largeur + Hauteur)\\nTexte: \\\"Lambrequin Courbe 3500x200mm - Toile Sunworker Beige - Jonc haut Alu - Jonc bas PVC - Lestage barre ronde\\\"\\n\\u2192 Designation: \\\"Lambrequin Courbe 3500x200mm\\\"\\n\\u2192 Categorie: \\\"Lambrequin\\\"\\n\\u2192 Largeur_mm: 3500, Hauteur_mm: 200 (tomb\\u00e9e/drop du lambrequin)\\n\\u2192 Couleur_toile: \\\"Sunworker Beige\\\", Forme_lambrequin: \\\"Courbe\\\"\\n\\u2192 Jonc_haut: \\\"Alu\\\", Jonc_bas: \\\"PVC\\\", Finition_lestage: \\\"Barre ronde\\\"\\n\\u2192 confidence_score: 95\\n\\n### R\\u00c8GLE FINITION LAMBREQUIN\\nLe champ \\\"Finition Lambrequin sur-mesure\\\" de la facture indique le TYPE DE JONC:\\n- \\\"Brute\\\" \\u2192 Jonc_haut: \\\"\\\", Jonc_bas: \\\"\\\" (PAS DE JONC, bords bruts)\\n- \\\"Jonc 5 mm\\\" \\u2192 Jonc_haut: \\\"Jonc 5 mm\\\", Jonc_bas: \\\"\\\" (jonc uniquement en haut)\\n- \\\"Jonc 6 mm\\\" \\u2192 Jonc_haut: \\\"Jonc 6 mm\\\", Jonc_bas: \\\"\\\"\\n- \\\"Jonc haut + bas\\\" \\u2192 remplir les deux champs\\nNE PAS mettre \\\"Brute\\\" dans Jonc_haut ou Jonc_bas. Brute = pas de jonc = champs vides.\\nLe champ \\\"Forme\\\" de la facture (ex: \\\"Finition Droite\\\", \\\"Onde\\\", \\\"Vague\\\") \\u2192 Forme_lambrequin\\n\\n### R\\u00c8GLE RENTOILAGE \\u2014 CHAMPS SP\\u00c9CIFIQUES\\nLes factures de rentoilage utilisent un vocabulaire diff\\u00e9rent:\\n- \\\"Largeur r\\u00e9elle de la toile\\\" \\u2192 Largeur_mm (en mm)\\n- \\\"Projection r\\u00e9elle de la toile\\\" \\u2192 avanc\\u00e9e (en mm, PAS Hauteur_mm)\\n- \\\"Dimension : XX.XXm\\u00b2\\\" \\u2192 Surface_m2\\n- \\\"Finition haute : Jonc X mm\\\" \\u2192 Jonc_haut: \\\"Jonc X mm\\\"\\n- \\\"Finition basse : Jonc X mm\\\" \\u2192 Jonc_bas: \\\"Jonc X mm\\\"\\n- \\\"Finition Lambrequin : Jonc X mm\\\" \\u2192 info lambrequin (sous-\\u00e9l\\u00e9ment du rentoilage)\\n- \\\"Lambrequin : Lambrequin Droit (hauteur : 24 cm) 39.00 \\u20ac\\\" \\u2192 Forme_lambrequin: \\\"Droit\\\", Hauteur_mm: 240 (convertir cm\\u2192mm)\\n- \\\"Entretien armature : Pack rentoilage OFFERT\\\" \\u2192 Options_supplementaires\\n- Rentoilage + Lambrequin ensemble = cat\\u00e9gorie \\\"Rentoilage\\\" (le lambrequin est un sous-\\u00e9l\\u00e9ment)\\n\\n### Exemple 4: Rentoilage (dimensions = Largeur \\u00d7 Avanc\\u00e9e)\\nTexte: \\\"Rentoilage Store 3800x2500 - Toile Sattler 314001 Vert\\\"\\n\\u2192 Designation: \\\"Rentoilage Store 3800x2500\\\"\\n\\u2192 Categorie: \\\"Rentoilage\\\"\\n\\u2192 Largeur_mm: 3800, avanc\\u00e9e: 2500, Surface_m2: 9.50\\n\\u2192 Couleur_toile: \\\"Sattler 314001 Vert\\\"\\n\\u2192 confidence_score: 85, validation_notes: \\\"Pas de joncs mentionn\\u00e9s\\\"\\n\\n### Exemple 5: Moustiquaire (dimensions = Largeur \\u00d7 Hauteur)\\nTexte: \\\"Moustiquaire Enroulable Lat\\u00e9rale 1200x2200 - Blanc - Fixation vis\\\"\\n\\u2192 Designation: \\\"Moustiquaire Enroulable Lat\\u00e9rale 1200x2200\\\"\\n\\u2192 Categorie: \\\"Moustiquaire\\\"\\n\\u2192 Largeur_mm: 1200, Hauteur_mm: 2200 (\\u26a0 ici c'est bien Hauteur)\\n\\u2192 Couleur_toile: \\\"Blanc\\\", Accessoires_fixation: \\\"Fixation vis\\\"\\n\\u2192 confidence_score: 90\\n\\n### Exemple 6: Parasol\\nTexte: \\\"Parasol D\\u00e9port\\u00e9 Alu 3x3m - Toile Sunbrella Taupe\\\"\\n\\u2192 Designation: \\\"Parasol D\\u00e9port\\u00e9 Alu 3x3m - Toile Sunbrella Taupe\\\"\\n\\u2192 Categorie: \\\"Parasol\\\"\\n\\u2192 Couleur_toile: \\\"Sunbrella Taupe\\\"\\n\\u2192 confidence_score: 80, validation_notes: \\\"Dimensions en m pas mm\\\"\\n\\n## \\u00c9TAPE 1 : CR\\u00c9ER LE CLIENT\\n- UTILISE l'outil \\\"Create or update client\\\"\\n- client_id: email en minuscules OU t\\u00e9l\\u00e9phone sans espaces (pr\\u00e9f\\u00e8re email si disponible)\\n- Extrais: Nom complet, Email, T\\u00e9l\\u00e9phone (format 0X XX XX XX XX), Adresse compl\\u00e8te, Code postal (5 chiffres), Ville, D\\u00e9partement (2 premiers chiffres du CP)\\n- Si le client a une adresse de livraison diff\\u00e9rente de l'adresse de facturation, remplis Adresse_livraison\\n  - Si le DESTINATAIRE est diff\\u00e9rent du client (nom diff\\u00e9rent dans 'Exp\\u00e9di\\u00e9 \\u00e0'), ajoute le nom du destinataire en d\\u00e9but d'Adresse_livraison. Ex: 'Francine Ollard - 5 rue des ch\\u00e8nevi\\u00e8res, Mornac 16600'\\n- ATTENDS la r\\u00e9ponse de l'outil. Il retournera un objet JSON contenant le champ \\\"id\\\" (ex: \\\"rec4kF8mJx2qN9pLw\\\"). M\\u00c9MORISE cet ID pour l'\\u00e9tape suivante.\\n- \\u26d4 Utilise UNIQUEMENT l'id R\\u00c9EL retourn\\u00e9 par l'outil (commence par \\\"rec\\\", 17 caract\\u00e8res).\\n\\n## \\u00c9TAPE 2 : CR\\u00c9ER LA FACTURE\\n- UTILISE l'outil \\\"Create Invoice\\\"\\n- Clients = [ID_CLIENT_R\\u00c9EL] \\u2014 Utilise l'id EXACT retourn\\u00e9 par \\\"Create or update client\\\" \\u00e0 l'\\u00e9tape 1 (ex: [\\\"rec4kF8mJx2qN9pLw\\\"])\\n- facture_id = num\\u00e9ro de facture tel quel (ex: \\\"000005841\\\", \\\"2508060702\\\", \\\"F-2024-001234\\\")\\n  - Format Magento: \\\"Facture n\\u00b0 000005841\\\" ou \\\"Facture #000004488\\\"\\n  - Format B2B: \\\"Facture n\\u00b0 #2508060702\\\"\\n- Num\\u00e9ro = num\\u00e9ro de COMMANDE (souvent diff\\u00e9rent du num\\u00e9ro de facture)\\n  - Format Magento: \\\"Commande n\\u00b0 000007005\\\" ou \\\"Commande #000005437\\\"\\n  - Format B2B: peut ne pas avoir de num\\u00e9ro de commande s\\u00e9par\\u00e9\\n- Num\\u00e9ro facture = num\\u00e9ro de FACTURE\\n- Date: TOUJOURS format YYYY-MM-DD. Si la date est au format DD/MM/YYYY, convertis-la (15/03/2024 \\u2192 2024-03-15)\\n- Magasin: nom exact du magasin/enseigne tel qu'il appara\\u00eet\\n- Montants: convertis les formats fran\\u00e7ais en nombres d\\u00e9cimaux:\\n  \\u2022 \\\"1 500,00 \\u20ac\\\" \\u2192 1500.00\\n  \\u2022 \\\"2.350,00\\\" \\u2192 2350.00\\n  \\u2022 Enl\\u00e8ve espaces, symboles \\u20ac/EUR, remplace virgule par point\\n- subtotal_ht, total_vat, Total_TTC, Acompte, balance_due = Total_TTC - Acompte\\n- Paiement: mode de paiement (Ch\\u00e8que, CB, Virement, Esp\\u00e8ces)\\n- Type de document: \\\"Facture\\\", \\\"Devis\\\", \\\"Avoir\\\", ou \\\"Proforma\\\"\\n- Statut de paiement: \\\"Pay\\u00e9\\\" si solde=0, \\\"Partiel\\\" si acompte>0, \\\"En attente\\\" sinon\\n- discount_total: montant total des remises/r\\u00e9ductions\\n- Nombre de produits: nombre de produits/lignes\\n- currency: \\\"EUR\\\", remark: remarques de la facture\\n- PDF_original = copie EXACTEMENT l'URL fournie apr\\u00e8s URL_PDF_ORIGINAL:\\n- ATTENDS la r\\u00e9ponse de l'outil. M\\u00c9MORISE le \\\"id\\\" retourn\\u00e9 pour l'\\u00e9tape 3.\\n- \\u26d4 Utilise TOUJOURS l'id r\\u00e9el retourn\\u00e9, JAMAIS un placeholder.\\n\\n## \\u00c9TAPE 3 : CR\\u00c9ER LES PRODUITS\\nPour CHAQUE produit/ligne de la facture:\\n- UTILISE l'outil \\\"Create Product\\\"\\n- Factures = [ID_FACTURE_R\\u00c9EL] \\u2014 Utilise l'id EXACT retourn\\u00e9 par \\\"Create Invoice\\\" \\u00e0 l'\\u00e9tape 2 (ex: [\\\"recX7yM3kLp9qW2nB\\\"])\\n\\n### R\\u00c8GLES DE PARSING DES DIMENSIONS:\\n1. **Dimensions sur la facture = LARGEURxSECONDE_DIM en mm**\\n   - Si en cm (400x300cm): convertir en mm (4000x3000mm)\\n   - Si en m (4x3m): convertir en mm (4000x3000mm)\\n2. **Store banne / Rentoilage**: 2\\u00e8me dim = **avanc\\u00e9e** (PAS Hauteur_mm). Surface = L\\u00d7A/1000000\\n3. **Volet roulant / Moustiquaire**: 2\\u00e8me dim = **Hauteur_mm** (vertical). Pas de Surface_m2\\n4. **Lambrequin**: dimensions = **Largeur_mm** \\u00d7 **Hauteur_mm** (tomb\\u00e9e). Pas d'avanc\\u00e9e ni Surface\\n5. **Parasol**: dimensions libres dans Designation\\n6. **Quantite**: 1 par d\\u00e9faut. Cherche \\\"Qt\\u00e9:\\\", \\\"x2\\\", \\\"x3\\\" etc.\\n   - Si Qt\\u00e9 > 1 (ex: Qt\\u00e9: 2 lambrequins identiques), cr\\u00e9e UN SEUL produit avec Quantite=valeur\\n   - Mets dans Remarque: \\\"Attention: X exemplaires identiques \\u00e0 fabriquer\\\"\\n   - Prix_unitaire_HT = prix unitaire, Prix_total_TTC = prix total (Qt\\u00e9 \\u00d7 prix unit \\u00d7 TVA)\\n7. **Prix**: Si pas TTC explicitement, c'est probablement HT\\n\\n### CHAMPS OBLIGATOIRES PAR CAT\\u00c9GORIE:\\n- **Store banne**: Largeur_mm, avanc\\u00e9e, Surface_m2, Couleur_toile, Couleur_armature, Moteur, Forme_lambrequin, Jonc_haut, Jonc_bas\\n- **Lambrequin**: Largeur_mm, Hauteur_mm, Couleur_toile, Forme_lambrequin, Jonc_haut, Jonc_bas\\n- **Rentoilage / Rentoilage double pente**: Largeur_mm, avanc\\u00e9e, Couleur_toile\\n- **Volet roulant**: Largeur_mm, Hauteur_mm, Moteur, Couleur_armature\\n- **Moustiquaire**: Largeur_mm, Hauteur_mm, Couleur_toile\\n- **Parasol**: Designation descriptive compl\\u00e8te\\n\\n### OPTIONS SP\\u00c9CIALES \\u00c0 MAPPER:\\n- \\\"Kit de scellement chimique ... : Inox A4 W\\u00fcrth\\\" \\u2192 Kit_scellement: \\\"Inox A4 W\\u00fcrth\\\"\\n- \\\"Lambrequin : Lambrequin Droit (hauteur : 24 cm)\\\" \\u2192 Forme_lambrequin: \\\"Droit\\\", Hauteur_mm: 240 (cm\\u2192mm)\\n- \\\"Entretien armature : Pack rentoilage OFFERT\\\" \\u2192 Options_supplementaires: \\\"Pack rentoilage OFFERT\\\"\\n- \\\"Panneau photovolta\\u00efque\\\" \\u2192 Options_supplementaires: \\\"Panneau photovolta\\u00efque Ici Store\\\"\\n- \\\"Capteur Vent Somfy Eolis\\\" \\u2192 Capteur_vent: \\\"Somfy Eolis 3D iO\\\" (ou mod\\u00e8le exact)\\n- \\\"(option LEDs incompatible)\\\" \\u2192 LEDs: \\\"\\\" (VIDE, pas \\\"incompatible\\\")\\n- \\\"Automatisme : Capteur Vent...\\\" \\u2192 Capteur_vent (PAS Options_supplementaires)\\n- Prix barr\\u00e9 <strike>415.00\\u20ac</strike> 207.00\\u20ac \\u2192 utiliser le prix APR\\u00c8S le barr\\u00e9 (207.00\\u20ac)\\n\\n### TOUS LES CHAMPS DISPONIBLES:\\nDesignation, Categorie, Largeur_mm, Hauteur_mm, avanc\\u00e9e, Surface_m2, Couleur_toile, Couleur_armature, Moteur, Forme_lambrequin, Jonc_haut, Jonc_bas, Finition_lestage, Accessoires_fixation, Options_supplementaires, Quantite, Prix_unitaire_HT, Prix_total_TTC, Capteur_vent, LEDs, Type_commande, Remarque, Kit_scellement, Cote_commande, confidence_score, validation_notes\\n\\n### SCORE DE CONFIANCE (OBLIGATOIRE):\\n- confidence_score = entier 0-100\\n  \\u2022 90-100: tous les champs obligatoires trouv\\u00e9s clairement\\n  \\u2022 70-89: quelques champs d\\u00e9duits ou incertains\\n  \\u2022 50-69: donn\\u00e9es partielles, plusieurs champs manquants\\n  \\u2022 0-49: extraction tr\\u00e8s incertaine\\n- validation_notes = liste pr\\u00e9cise des probl\\u00e8mes d\\u00e9tect\\u00e9s\\n\\n## AVOIRS (CREDIT MEMO)\\nSi le document contient \\\"Avoir n\\u00b0\\\" au lieu de \\\"Facture n\\u00b0\\\":\\n- Type_de_document: \\\"Avoir\\\"\\n- Les montants sont des REMBOURSEMENTS (n\\u00e9gatifs ou positifs selon le contexte)\\n- Si 0 produits dans le tableau \\u2192 NE PAS cr\\u00e9er de produit. Mets le d\\u00e9tail dans remark de la facture.\\n- Cr\\u00e9e quand m\\u00eame le Client + la Facture (avec les montants)\\n\\n## R\\u00c8GLES STRICTES\\n1. TOUJOURS utiliser les outils dans l'ordre: Client \\u2192 Facture \\u2192 Produit(s)\\n2. Champs vides = \\\"\\\" (JAMAIS \\\"N/A\\\", \\\"Non sp\\u00e9cifi\\u00e9\\\", \\\"null\\\")\\n3. Prix et dimensions = NOMBRES d\\u00e9cimaux sans symboles\\n4. Liaisons = tableaux contenant l'ID R\\u00c9EL retourn\\u00e9 par l'outil pr\\u00e9c\\u00e9dent. Jamais de placeholder.\\n5. statut_validation = \\\"En attente\\\"\\n6. FACTURES EN LIGNE / MAGENTO:\\n   - Si l'en-t\\u00eate de la facture contient \\\"ICI STORE\\\" ou \\\"ici-store.com\\\" ou \\\"Magento\\\" \\u2192 Magasin=\\\"Magento - ICI Store\\\"\\n   - Si Magasin contient \\\"Magento\\\" \\u2192 Paiement=mode de paiement exact (PayPal, CB, etc.), Statut_de_paiement=\\\"Pay\\u00e9\\\", Acompte=Total_TTC, balance_due=0\\n   - Ces factures sont D\\u00c9J\\u00c0 PAY\\u00c9ES en ligne (e-commerce)\\n7. Store banne + Lambrequin ensemble = UN SEUL produit cat\\u00e9gorie \\\"Store banne\\\"\\n8. Lambrequin seul (sans store) = cat\\u00e9gorie \\\"Lambrequin\\\"\\n9. Services/main d'\\u0153uvre (pose, livraison): NE PAS cr\\u00e9er de produit \\u2192 note dans remark facture\\n10. Accessoires s\\u00e9par\\u00e9s (t\\u00e9l\\u00e9commande, capteur): produit avec confidence_score bas si cat\\u00e9gorie incertaine\\n\\n\\n\\n## FACTURES B2B / PROFESSIONNELLES\\nCertaines factures ont un format diff\\u00e9rent (B2B/grossiste):\\n- En-t\\u00eate: \\\"Facturer \\u00e0\\\" / \\\"Exp\\u00e9dier \\u00e0\\\" (au lieu de \\\"Vendu \\u00e0\\\" / \\\"Livrer \\u00e0\\\")\\n- Tableau: R\\u00e9f\\u00e9rence | D\\u00e9signation | Quantit\\u00e9 | Prix unitaire HT | Prix unitaire TTC | Total TTC\\n- Paiement: \\\"VIREMENT\\\", \\\"30 JOURS FIN DE MOIS\\\", etc.\\n- Num\\u00e9ro facture: format #XXXXXXXXXX (ex: #2508060702)\\n- Date: format DD/MM/YYYY (ex: 06/08/2025) \\u2192 convertir en YYYY-MM-DD\\n- Magasin: le NOM DU CLIENT PRO (ex: \\\"2AF STORES\\\") \\u2014 PAS \\\"ICI Store\\\"\\n\\nPour les PRODUITS B2B (composants, moteurs, t\\u00e9l\\u00e9commandes, panneaux solaires):\\n- Categorie: \\\"Composant\\\" (ce ne sont PAS des stores/lambrequins)\\n- Designation: la d\\u00e9signation compl\\u00e8te du composant\\n- Renseigne la R\\u00e9f\\u00e9rence produit dans product_summary (ex: \\\"DM45LE/S-20/10\\\")\\n- Quantite: la quantit\\u00e9 command\\u00e9e\\n- statut_validation: \\\"Valid\\u00e9\\\" (les commandes B2B n'ont pas besoin de validation production)\\n- statut_production: \\\"\\u00c0 pr\\u00e9parer\\\" (composants \\u00e0 pr\\u00e9parer pour exp\\u00e9dition)\\n- confidence_score: 90 (format structur\\u00e9 = haute confiance)\\n## GESTION DES TABLEAUX DE PRODUITS\\n- Chaque LIGNE du tableau = un produit s\\u00e9par\\u00e9 (sauf sous-\\u00e9l\\u00e9ments d'un m\\u00eame store)\\n- Sous-\\u00e9l\\u00e9ments d'un store banne (moteur, capteur, lambrequin list\\u00e9s sous le store) = M\\u00caME produit\\n- Ne confonds pas le total d'une ligne avec le total facture\";\n\nconst userPrompt = `Analyse ce texte de facture et retourne un JSON structuré.\n\nURL_PDF_ORIGINAL: ${pdfUrl}\n\n${pdfText}\n\nIMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, sans markdown, sans \\`\\`\\`.\nLe JSON doit avoir exactement cette structure:\n{\n  \"client\": {\n    \"nom\": \"\",\n    \"email\": \"\",\n    \"telephone\": \"\",\n    \"adresse\": \"\",\n    \"code_postal\": \"\",\n    \"ville\": \"\",\n    \"type_client\": \"B2C\"\n  },\n  \"facture\": {\n    \"facture_num\": \"\",\n    \"magasin\": \"\",\n    \"pdf_original\": \"${pdfUrl}\",\n    \"montant_ht\": 0,\n    \"montant_ttc\": 0,\n    \"date_facture\": \"\",\n    \"statut\": \"En attente\"\n  },\n  \"produits\": [\n    {\n      \"designation\": \"\",\n      \"categorie\": \"\",\n      \"quantite\": 1,\n      \"statut_validation\": \"En attente\",\n      \"statut_production\": \"En attente\"\n    }\n  ]\n}`;\n\nreturn [{ json: { systemPrompt, userPrompt } }];\n"
+      },
+      "id": "ee5d1513-02a5-4e4a-b361-df30fe0fb3db",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1552,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"qwen2.5:7b\",\n  \"messages\": [\n    {\"role\": \"system\", \"content\": {{ JSON.stringify($json.systemPrompt) }}},\n    {\"role\": \"user\", \"content\": {{ JSON.stringify($json.userPrompt) }}}\n  ],\n  \"stream\": false,\n  \"options\": {\"temperature\": 0.1}\n}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "ffd3d913-cef9-49bf-b0b1-4915a53faddc",
+      "name": "Call Ollama Extract",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1328,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst raw = $json.message?.content || $json.response || '';\n// Nettoyer les balises markdown si présentes\nlet cleaned = raw.trim();\ncleaned = cleaned.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/```\\s*$/, '').trim();\n// Trouver le JSON\nconst start = cleaned.indexOf('{');\nconst end = cleaned.lastIndexOf('}');\nif (start === -1 || end === -1) {\n  return [{ json: { _error: 'No JSON found', raw: raw.substring(0, 500) } }];\n}\ntry {\n  const parsed = JSON.parse(cleaned.substring(start, end + 1));\n  return [{ json: parsed }];\n} catch(e) {\n  return [{ json: { _error: e.message, raw: cleaned.substring(0, 500) } }];\n}\n"
+      },
+      "id": "caf41303-0e39-4496-b557-cae2ab5c68ec",
+      "name": "Parse Invoice JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO clients (id, nom, email, telephone, adresse, code_postal, ville, type_client, created_at, updated_at)\nVALUES (\n  gen_random_uuid()::text,\n  '{{ $json.client?.nom || '' }}',\n  NULLIF('{{ $json.client?.email || '' }}', ''),\n  '{{ $json.client?.telephone || '' }}',\n  '{{ $json.client?.adresse || '' }}',\n  '{{ $json.client?.code_postal || '' }}',\n  '{{ $json.client?.ville || '' }}',\n  '{{ $json.client?.type_client || 'B2C' }}',\n  NOW(), NOW()\n)\nON CONFLICT (email) DO UPDATE SET\n  nom = EXCLUDED.nom,\n  telephone = EXCLUDED.telephone,\n  adresse = EXCLUDED.adresse,\n  code_postal = EXCLUDED.code_postal,\n  ville = EXCLUDED.ville,\n  updated_at = NOW()\nRETURNING *",
+        "options": {}
+      },
+      "id": "76adfbfc-3d79-4679-bd87-16b387aa4c1c",
+      "name": "Insert Client",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -880,
+        -256
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO factures (id, facture_num, magasin, pdf_original, client_id, montant_ht, montant_ttc, date_facture, statut, created_at, updated_at)\nVALUES (\n  gen_random_uuid()::text,\n  NULLIF('{{ $('Parse Invoice JSON').first().json.facture?.facture_num || '' }}', ''),\n  '{{ $('Parse Invoice JSON').first().json.facture?.magasin || '' }}',\n  '{{ $('Parse Invoice JSON').first().json.facture?.pdf_original || '' }}',\n  '{{ $json.id }}',\n  {{ $('Parse Invoice JSON').first().json.facture?.montant_ht || 0 }},\n  {{ $('Parse Invoice JSON').first().json.facture?.montant_ttc || 0 }},\n  NULLIF('{{ $('Parse Invoice JSON').first().json.facture?.date_facture || '' }}', ''),\n  '{{ $('Parse Invoice JSON').first().json.facture?.statut || 'En attente' }}',\n  NOW(), NOW()\n)\nON CONFLICT (facture_num) DO UPDATE SET\n  magasin = EXCLUDED.magasin,\n  montant_ttc = EXCLUDED.montant_ttc,\n  updated_at = NOW()\nRETURNING *",
+        "options": {}
+      },
+      "id": "cde64529-6fa4-475f-a878-d5261d46e40f",
+      "name": "Insert Facture",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -656,
+        -256
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst facture = $('Insert Facture').first().json;\nconst parsed = $('Parse Invoice JSON').first().json;\nconst produits = parsed.produits || [];\nif (produits.length === 0) return [{ json: { _no_products: true } }];\nreturn produits.map(p => ({\n  json: {\n    ...p,\n    facture_id: facture.id\n  }\n}));\n"
+      },
+      "id": "93aa9ece-b12b-4241-8c4a-87c50401f80f",
+      "name": "Prepare Produits",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO produits (id, designation, categorie, quantite, facture_id, statut_validation, statut_production, created_at, updated_at)\nVALUES (\n  gen_random_uuid()::text,\n  '{{ $json.designation || '' }}',\n  '{{ $json.categorie || '' }}',\n  {{ $json.quantite || 1 }},\n  '{{ $json.facture_id }}',\n  '{{ $json.statut_validation || 'En attente' }}',\n  '{{ $json.statut_production || 'En attente' }}',\n  NOW(), NOW()\n)\nRETURNING *",
+        "options": {}
+      },
+      "id": "07c6322e-7ded-423d-927d-c50f66a733d8",
+      "name": "Insert Produits",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -208,
+        -256
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Extraction": {
+      "main": [
+        [
+          {
+            "node": "Save Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Context": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Context": {
+      "main": [
+        [
+          {
+            "node": "Search Created Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Created Invoice": {
+      "main": [
+        [
+          {
+            "node": "Get Products Without QR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Products Without QR": {
+      "main": [
+        [
+          {
+            "node": "Has Products?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Products?": {
+      "main": [
+        [
+          {
+            "node": "Validate Products",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Products": {
+      "main": [
+        [
+          {
+            "node": "Generate bon_id & QR URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate bon_id & QR URL": {
+      "main": [
+        [
+          {
+            "node": "Update Product with QR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Product with QR": {
+      "main": [
+        [
+          {
+            "node": "Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Ollama Extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Ollama Extract": {
+      "main": [
+        [
+          {
+            "node": "Parse Invoice JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Invoice JSON": {
+      "main": [
+        [
+          {
+            "node": "Insert Client",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Client": {
+      "main": [
+        [
+          {
+            "node": "Insert Facture",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Facture": {
+      "main": [
+        [
+          {
+            "node": "Prepare Produits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Produits": {
+      "main": [
+        [
+          {
+            "node": "Insert Produits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Produits": {
+      "main": [
+        [
+          {
+            "node": "Load Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-06 14:26:52.717",
+  "updatedAt": "2026-03-24 18:52:36.428",
+  "description": ""
+}

@@ -1,0 +1,371 @@
+{
+  "id": "yj2Ry6Qrq4mWIZhK",
+  "name": "04  Notifications & Alertes",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Configuration Notifications\n\nPour activer les notifications, ajoutez un des nodes suivants après \"Aggregate Alerts\":\n\n### Slack\n- Node: Slack > Send Message\n- Channel: #production-alerts\n- Text: {{ $json.message }}\n\n### Email\n- Node: Send Email\n- To: production@ici-store.com\n- Subject: Alertes Production - {{ $json.total_alertes }} alerte(s)\n- Body: {{ $json.message }}\n\n### Discord\n- Node: Discord > Send Message\n- Webhook URL: votre-webhook-discord\n- Content: {{ $json.message }}\n\n### Telegram\n- Node: Telegram > Send Message\n- Chat ID: votre-chat-id\n- Text: {{ $json.message }}",
+        "height": 676,
+        "width": 340
+      },
+      "id": "07955316-cb49-440b-92ec-434c6aa3c95f",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        256,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "811979da-fff5-4795-b7d2-027b77a3e20a",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -928,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.*, f.facture_num, f.magasin, c.nom as client_nom FROM produits p LEFT JOIN factures f ON f.id = p.facture_id LEFT JOIN clients c ON c.id = f.client_id WHERE p.statut_validation = 'Validé' AND (p.statut_production IS NULL OR p.statut_production != 'Terminé') ORDER BY p.created_at ASC",
+        "options": {}
+      },
+      "id": "1ce7ba93-d803-4530-8717-ee859a5c523a",
+      "name": "Get Products in Production",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -768,
+        336
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Configuration des délais max par étape (en heures)\nconst DELAIS_MAX = {\n  'Découpe toile': 4,\n  'Couture': 6,\n  'Découpe armature': 4,\n  'Assemblage': 8,\n  'Réglage': 2,\n  'Emballage': 2,\n  'Expédition': 24\n};\n\nconst items = $input.all();\nconst now = new Date();\nconst alertes = [];\n\nfor (const item of items) {\n  const fields = item.json.fields || item.json;\n  const bonId = fields.produit_id || item.json.id;\n  const etape = fields.statut_production || 'Découpe toile';\n  const client = fields['Nom (from Client) (from Facture_liee)']?.[0] || 'N/A';\n  const designation = fields.Designation || 'N/A';\n  \n  // Mapping étape -> champ date début\n  const dateFields = {\n    'Découpe toile': 'debut_dido',\n    'Couture': 'debut_couture',\n    'Découpe armature': 'debut_armature',\n    'Assemblage': 'debut_assemblage',\n    'Réglage': 'debut_reglage',\n    'Emballage': 'debut_emballage',\n    'Expédition': 'date_expe'\n  };\n  \n  const dateField = dateFields[etape];\n  const dateDebut = fields[dateField] ? new Date(fields[dateField]) : null;\n  \n  if (dateDebut) {\n    const heuresEcoulees = (now - dateDebut) / (1000 * 60 * 60);\n    const delaiMax = DELAIS_MAX[etape] || 24;\n    \n    if (heuresEcoulees > delaiMax) {\n      const retard = Math.round(heuresEcoulees - delaiMax);\n      alertes.push({\n        type: 'retard',\n        bon_id: bonId,\n        etape: etape,\n        client: client,\n        designation: designation,\n        heures_retard: retard,\n        message: `⚠️ RETARD: ${bonId} - ${etape} en retard de ${retard}h (Client: ${client})`\n      });\n    }\n  } else {\n    // Pas de date de début = étape non commencée\n    const dateValidation = fields.date_validation ? new Date(fields.date_validation) : null;\n    if (dateValidation) {\n      const heuresAttente = (now - dateValidation) / (1000 * 60 * 60);\n      if (heuresAttente > 24) {\n        alertes.push({\n          type: 'non_demarre',\n          bon_id: bonId,\n          etape: etape,\n          client: client,\n          designation: designation,\n          heures_attente: Math.round(heuresAttente),\n          message: `⏳ NON DÉMARRÉ: ${bonId} - ${etape} en attente depuis ${Math.round(heuresAttente)}h (Client: ${client})`\n        });\n      }\n    }\n  }\n}\n\n// Retourne les alertes\nif (alertes.length === 0) {\n  return [{json: {has_alerts: false, message: 'Aucune alerte'}}];\n}\n\nreturn alertes.map(a => ({json: {...a, has_alerts: true}}));"
+      },
+      "id": "f588aa9e-497f-4a3e-9677-e9d98f40fb94",
+      "name": "Check Delays",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.has_alerts }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ffe92221-0adc-4f10-bd81-d1885a0c61d8",
+      "name": "Has Alerts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Agrège toutes les alertes en un seul message\nconst alertes = $input.all();\nconst retards = alertes.filter(a => a.json.type === 'retard');\nconst nonDemarres = alertes.filter(a => a.json.type === 'non_demarre');\n\nlet message = `🔔 *ALERTES PRODUCTION MON USINE*\\n\\n`;\nmessage += `📅 ${new Date().toLocaleString('fr-FR')}\\n\\n`;\n\nif (retards.length > 0) {\n  message += `⚠️ *RETARDS (${retards.length})*\\n`;\n  retards.forEach(a => {\n    message += `• ${a.json.bon_id}: ${a.json.etape} (+${a.json.heures_retard}h)\\n`;\n    message += `  Client: ${a.json.client}\\n`;\n  });\n  message += `\\n`;\n}\n\nif (nonDemarres.length > 0) {\n  message += `⏳ *NON DÉMARRÉS (${nonDemarres.length})*\\n`;\n  nonDemarres.forEach(a => {\n    message += `• ${a.json.bon_id}: en attente depuis ${a.json.heures_attente}h\\n`;\n    message += `  Client: ${a.json.client}\\n`;\n  });\n}\n\nmessage += `\\n---\\nTotal: ${alertes.length} alerte(s)`;\n\nreturn [{json: {\n  message,\n  total_alertes: alertes.length,\n  retards: retards.length,\n  non_demarres: nonDemarres.length\n}}];"
+      },
+      "id": "4a6edc8e-2499-4765-8599-c7c529a92f32",
+      "name": "Aggregate Alerts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "d36516aa-8118-44eb-8328-47f71da24ad0",
+      "name": "No Alerts",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        32,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM produits WHERE stock_bas = true AND (LOWER(designation) LIKE '%volet%' OR LOWER(categorie) LIKE '%volet%') ORDER BY designation",
+        "options": {}
+      },
+      "id": "95a5baef-4d87-4d4e-bde2-5bf4fa2c4140",
+      "name": "Get Stocks Bas Volets",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -768,
+        512
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nif (!items || items.length === 0 || !items[0]?.json?.id) {\n  return [{ json: { has_stock_alerts: false, stock_alerts: [], message: 'Stocks volets OK' } }];\n}\n\nconst alerts = items.map(item => {\n  const f = item.json.fields || {};\n  const designation = f.Designation?.[0] || f.Designation || 'N/A';\n  const qte = f.QuantiteDisponible ?? 0;\n  const seuil = f.SeuilMin ?? 2;\n  const emplacement = f.Emplacement || 'N/A';\n  const urgence = qte === 0 ? '🔴 RUPTURE' : '🟡 STOCK BAS';\n  return { urgence, designation, qte, seuil, emplacement, has_alerts: true,\n    message: `${urgence}: Réappro volet ${designation} : ${qte} restants (seuil: ${seuil})` };\n});\n\nconst msgLines = alerts.map(a => a.message).join('\\n');\nconst totalRuptures = alerts.filter(a => a.qte === 0).length;\nconst totalBas = alerts.filter(a => a.qte > 0).length;\n\nreturn [{ json: {\n  has_stock_alerts: true,\n  stock_alerts: alerts,\n  total_stock_alerts: alerts.length,\n  total_ruptures: totalRuptures,\n  total_bas: totalBas,\n  message_slack: `*📦 Stocks volets bas — ${new Date().toLocaleDateString('fr-FR')}*\\n${alerts.map(a => `• ${a.urgence} *${a.designation}* : ${a.qte} restants`).join('\\n')}`,\n  email_subject: `[Mon Usine] ${totalRuptures} rupture(s), ${totalBas} stock(s) bas — Volets`,\n  email_body: `<h3>📦 Stocks Volets Roulants Bas</h3><table border='1' cellpadding='6' style='border-collapse:collapse'><tr><th>Désignation</th><th>Stock</th><th>Seuil</th><th>Emplacement</th><th>Statut</th></tr>${alerts.map(a => `<tr style='color:${a.qte===0?'red':'orange'}'><td>${a.designation}</td><td><b>${a.qte}</b></td><td>${a.seuil}</td><td>${a.emplacement}</td><td>${a.urgence}</td></tr>`).join('')}</table>`\n}}];"
+      },
+      "id": "de6f47f1-ae48-4a0d-ac7b-a44683785c59",
+      "name": "Format Stock Alerts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true
+          },
+          "conditions": [
+            {
+              "id": "has-stock-alert-04",
+              "leftValue": "={{ $json.has_stock_alerts }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7d6adf19-93b3-4ef6-8f0d-9ed69c5f853e",
+      "name": "Stock Alerts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_STOCK || $env.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/VOTRE/WEBHOOK/SLACK' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.message_slack }}"
+            },
+            {
+              "name": "channel",
+              "value": "#stock-alertes"
+            },
+            {
+              "name": "username",
+              "value": "Mon Usine — Stock Bot"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "002e9a6b-3884-4075-9887-85fc23beb83f",
+      "name": "Slack Stock Bas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -96,
+        416
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "8fa7b200-3767-467e-b9df-6817d07d1fe6",
+      "name": "Telegram Stock Bas",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -96,
+        592
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "8471849130",
+        "text": "={{ $json.message || '🚨 Alerte stock bas — voir dashboard' }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "5IqF446S7446SmUc",
+          "name": "agent"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [
+        [
+          {
+            "node": "Get Products in Production",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Stocks Bas Volets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Stocks Bas Volets": {
+      "main": [
+        [
+          {
+            "node": "Format Stock Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Stock Alerts": {
+      "main": [
+        [
+          {
+            "node": "Stock Alerts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stock Alerts?": {
+      "main": [
+        [
+          {
+            "node": "Slack Stock Bas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Stock Bas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Products in Production": {
+      "main": [
+        [
+          {
+            "node": "Check Delays",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Delays": {
+      "main": [
+        [
+          {
+            "node": "Has Alerts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Alerts?": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {},
+  "createdAt": "2026-03-06 14:30:54.622",
+  "updatedAt": "2026-03-24 18:50:21.795",
+  "description": ""
+}

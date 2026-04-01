@@ -1,0 +1,218 @@
+{
+  "id": "QMI5k2sshFG3Ga0q",
+  "name": "07 Auto Process PDFs (Schedule)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Configuration\n\n1. **Ajoutez l'ID du workflow principal**\n   - Ouvrez le node \"Execute Main Workflow\"\n   - Sélectionnez le workflow \"01 - ICI STORE - Extraction Factures PDF + QR Code\"\n\n2. **Ajustez l'intervalle**\n   - Par défaut: toutes les 15 minutes\n   - Modifiez selon vos besoins dans \"Every 15 Minutes\"\n\n3. **Limite de PDFs**\n   - Par défaut: 5 PDFs max par exécution\n   - Évite de surcharger le système\n\n## Alternative\n\nVous pouvez aussi utiliser un webhook Airtable:\n- Trigger: Airtable automation \"When record created\"\n- Action: Call webhook n8n",
+        "height": 380,
+        "width": 340
+      },
+      "id": "22c4572b-9755-4c82-aa4b-33ed31e41fdd",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM uploads WHERE traite = false OR traite IS NULL ORDER BY created_at ASC",
+        "options": {}
+      },
+      "id": "65fafbdb-0fa4-4435-84df-5a17451dd8fb",
+      "name": "Get Unprocessed PDFs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        112,
+        576
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "5eL3oUFTR1IW5zFQ",
+          "name": "PostgreSQL local monusine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f11e53a2-9569-44e2-ba37-3d46bfab729b",
+      "name": "Has PDFs?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        368,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "oeok-kyIlHDE4e9jXmfFh",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/oeok-kyIlHDE4e9jXmfFh",
+          "cachedResultName": "import PDF"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [
+            "responseMode"
+          ],
+          "schema": [
+            {
+              "id": "responseMode",
+              "displayName": "responseMode",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "id": "99cd4317-e32e-4e96-864c-8e91ceb6051f",
+      "name": "Execute Main Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        800,
+        560
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "5587cd75-fc0f-46e6-a2af-d2ddb0fbdb62",
+      "name": "No PDFs to Process",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        640,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "path": "trigger-extraction",
+        "options": {}
+      },
+      "id": "3b0f90f3-ea75-4e60-8310-71486920e28e",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        528
+      ],
+      "webhookId": "trigger-extraction-manual"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Only pass 1 item to Execute Workflow\n// (WF01 fetches its own unprocessed PDFs)\nconst items = $input.all();\nreturn [{ json: { count: items.length, triggered: true } }];"
+      },
+      "id": "31910734-5a2a-4bb9-a13d-cf1f67eba6a5",
+      "name": "Trigger Once",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Unprocessed PDFs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Unprocessed PDFs": {
+      "main": [
+        [
+          {
+            "node": "Has PDFs?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has PDFs?": {
+      "main": [
+        [
+          {
+            "node": "Trigger Once",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No PDFs to Process",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Once": {
+      "main": [
+        [
+          {
+            "node": "Execute Main Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-06 14:31:46.453",
+  "updatedAt": "2026-03-24 14:04:28.628",
+  "description": ""
+}
